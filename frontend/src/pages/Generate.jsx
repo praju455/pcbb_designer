@@ -13,6 +13,10 @@ export default function Generate() {
   const [jobId, setJobId] = useState("");
   const { generateMutation, jobQuery } = usePipeline(jobId);
   const verification = useVerification(jobQuery.data);
+  const startError =
+    generateMutation.error?.response?.data?.detail ||
+    generateMutation.error?.message ||
+    "";
 
   useEffect(() => {
     if (generateMutation.data?.job_id) {
@@ -36,7 +40,15 @@ export default function Generate() {
           </div>
         }
       />
-      <GenerateForm onSubmit={({ description, optimize, skipVerify }) => generateMutation.mutate({ description, options: { optimize, no_verify: skipVerify } })} />
+      <GenerateForm
+        onSubmit={({ description, optimize, skipVerify }) => generateMutation.mutate({ description, options: { optimize, no_verify: skipVerify } })}
+        isSubmitting={generateMutation.isPending}
+      />
+      {startError ? (
+        <div className="rounded-[1.5rem] border border-error/20 bg-error/10 px-4 py-4 text-sm text-error">
+          {startError}
+        </div>
+      ) : null}
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="glass rounded-[2rem] p-6">
           <div className="mb-4 font-serif text-2xl">Run progress</div>

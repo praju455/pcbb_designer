@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function GenerateForm({ onSubmit }) {
+export default function GenerateForm({ onSubmit, isSubmitting = false }) {
   const [description, setDescription] = useState("");
   const [optimize, setOptimize] = useState("default");
   const [skipVerify, setSkipVerify] = useState(false);
@@ -24,7 +24,9 @@ export default function GenerateForm({ onSubmit }) {
           <input type="checkbox" checked={skipVerify} onChange={(event) => setSkipVerify(event.target.checked)} />
           <span>Skip verification for a faster, rougher first pass</span>
         </label>
-        <button disabled={!description.trim()} className="rounded-[1.25rem] bg-text px-5 py-3 font-semibold text-background transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50">Generate board</button>
+        <button disabled={!description.trim() || isSubmitting} className="rounded-[1.25rem] bg-text px-5 py-3 font-semibold text-background transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50">
+          {isSubmitting ? "Starting..." : "Generate board"}
+        </button>
       </div>
     </form>
   );

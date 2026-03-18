@@ -10,7 +10,8 @@
 button,
 select,
 summary,
-[role="button"] {
+[role="button"],
+a {
   cursor: pointer;
 }
 
@@ -35,6 +36,20 @@ textarea:focus,
 select:focus {
   outline: none;
   border-color: rgba(20, 108, 148, 0.42);
+  box-shadow: 0 0 0 4px rgba(20, 108, 148, 0.08);
+}
+
+a:focus,
+button:focus {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 4px rgba(20, 108, 148, 0.08);
 }
 
@@ -115,6 +130,20 @@ body::after {
 
 .ink-link:hover::after {
   transform: scaleX(1);
+}
+
+.interactive-box {
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.interactive-box:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(20, 47, 61, 0.1);
 }
 
 .fade-rise {

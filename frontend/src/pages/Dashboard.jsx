@@ -26,7 +26,7 @@ export default function Dashboard() {
               <span className={`h-3 w-3 rounded-full ${backendLive ? "bg-success" : healthQuery.isLoading ? "bg-warning animate-pulse-soft" : "bg-error"}`} />
               <span className="text-lg text-text">{backendLive ? "Connected" : healthQuery.isLoading ? "Connecting" : "Disconnected"}</span>
             </div>
-            <div className="text-sm leading-7 text-muted">{backendLive ? "The backend is reachable and ready for jobs." : "Point Nexus at Render or a local FastAPI instance to start generation and validation."}</div>
+            <div className="text-sm leading-7 text-muted">{backendLive ? "The backend is reachable and ready for jobs." : "Waiting for backend availability."}</div>
           </div>
         }
       />
