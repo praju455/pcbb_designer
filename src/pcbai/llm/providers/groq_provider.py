@@ -29,16 +29,44 @@ class GroqLLMProvider(BaseLLMProvider):
         self._settings = settings
         self._console = console or Console(stderr=True)
         self._client = Groq(api_key=settings.groq_api_key)
+        self._resolved_model: str | None = None
+
+    def _resolve_model(self) -> str:
+        """Choose the best available Groq model for structured agentic work."""
+
+        if self._resolved_model:
+            return self._resolved_model
+
+        preferred = [
+            self._settings.groq_model,
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "llama3-8b-8192",
+        ]
+        try:
+            available = self.list_available_models()
+        except LLMProviderError:
+            self._resolved_model = self._settings.groq_model
+            return self._resolved_model
+
+        for candidate in preferred:
+            if candidate in available:
+                self._resolved_model = candidate
+                return candidate
+
+        self._resolved_model = available[0] if available else self._settings.groq_model
+        return self._resolved_model
 
     def _chat(self, messages: list[dict[str, str]]) -> str:
         """Send a chat completion request to Groq."""
 
         with self._console.status(
-            f"[bold cyan]Waiting for Groq ({self._settings.groq_model})[/bold cyan]", spinner="dots"
+            f"[bold cyan]Waiting for Groq ({self._resolve_model()})[/bold cyan]", spinner="dots"
         ):
             try:
                 response = self._client.chat.completions.create(
-                    model=self._settings.groq_model,
+                    model=self._resolve_model(),
                     messages=messages,
                     temperature=0.2,
                 )

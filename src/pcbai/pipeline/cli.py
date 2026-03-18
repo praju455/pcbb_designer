@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import shutil
 import sys
 from pathlib import Path
@@ -216,9 +217,9 @@ def info_command(
     checks.add_column("Status")
     checks.add_row("kicad-cli", "[green]✅[/green]" if shutil.which(settings.kicad_cli_path) else "[red]❌[/red]")
     checks.add_row("Ollama", "[green]✅[/green]" if shutil.which("ollama") else "[red]❌[/red]")
-    checks.add_row("Groq SDK", "[green]✅[/green]" if llm_provider and llm_provider.get_provider_name() == "groq" and not llm_error else "[yellow]⚠️[/yellow]")
-    checks.add_row("PyMuPDF", "[green]✅[/green]" if __import__("importlib").util.find_spec("fitz") else "[red]❌[/red]")
-    checks.add_row("SKiDL", "[green]✅[/green]" if __import__("importlib").util.find_spec("skidl") else "[red]❌[/red]")
+    checks.add_row("Groq SDK", "[green]✅[/green]" if importlib.util.find_spec("groq") else "[red]❌[/red]")
+    checks.add_row("PyMuPDF", "[green]✅[/green]" if importlib.util.find_spec("fitz") else "[red]❌[/red]")
+    checks.add_row("SKiDL", "[green]✅[/green]" if importlib.util.find_spec("skidl") else "[red]❌[/red]")
     console.print(checks)
 
 

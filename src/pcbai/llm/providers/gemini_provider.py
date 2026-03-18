@@ -23,6 +23,34 @@ class GeminiLLMProvider(BaseLLMProvider):
             raise LLMProviderError("GEMINI_API_KEY is not configured. Add it to your .env file or shell.")
         self._console = console or Console(stderr=True)
         self._base_url = "https://generativelanguage.googleapis.com/v1beta"
+        self._resolved_model: str | None = None
+
+    def _resolve_model(self) -> str:
+        """Choose the best available Gemini model for this workflow."""
+
+        if self._resolved_model:
+            return self._resolved_model
+
+        preferred = [
+            self._settings.gemini_model,
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            "gemini-2.5-flash-lite",
+            "gemini-3-pro-preview",
+        ]
+        try:
+            available = self.list_available_models()
+        except LLMProviderError:
+            self._resolved_model = self._settings.gemini_model
+            return self._resolved_model
+
+        for candidate in preferred:
+            if candidate in available:
+                self._resolved_model = candidate
+                return candidate
+
+        self._resolved_model = available[0] if available else self._settings.gemini_model
+        return self._resolved_model
 
     def _post(self, model: str, prompt: str, system: str | None = None) -> dict[str, Any]:
         """Call a Gemini content generation endpoint."""
@@ -48,7 +76,7 @@ class GeminiLLMProvider(BaseLLMProvider):
     def generate(self, prompt: str) -> str:
         """Generate plain text from a user prompt."""
 
-        payload = self._post(self._settings.gemini_model, prompt)
+        payload = self._post(self._resolve_model(), prompt)
         candidates = payload.get("candidates", [])
         try:
             return candidates[0]["content"]["parts"][0]["text"].strip()
@@ -65,10 +93,12 @@ class GeminiLLMProvider(BaseLLMProvider):
         schema_text = json.dumps(schema, indent=2)
         last_error: Exception | None = None
         for attempt in range(1, 4):
-            raw = self.generate(f"{prompt}\n\nJSON schema:\n{schema_text}\n\nAttempt: {attempt}")
+            payload = self._post(self._resolve_model(), f"{prompt}\n\nJSON schema:\n{schema_text}\n\nAttempt: {attempt}", system=system_prompt)
+            candidates = payload.get("candidates", [])
             try:
+                raw = candidates[0]["content"]["parts"][0]["text"].strip()
                 return json.loads(raw)
-            except json.JSONDecodeError as exc:
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
                 last_error = exc
         raise LLMProviderError(f"Gemini did not return valid JSON after 3 attempts: {last_error}")
 

@@ -5,38 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pcb-designer-ai-agent"
 version = "0.0.1"
-description = "Agentic pipeline from natural language to PCB (BOM → footprints → schematic → routing → Gerbers)"
+description = "Plain English to manufacturable PCB generation from the terminal"
 authors = [{ name = "PCB Designer AI Agent Contributors" }]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-  "pydantic>=2.6",
-  "click>=8.1",
-  "requests>=2.31",
-  "python-dotenv>=1.0",
+  "typer[all]>=0.9.0",
+  "rich>=13.0.0",
+  "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
+  "groq>=0.4.0",
+  "python-dotenv>=1.0.0",
+  "requests>=2.31.0",
+  "pymupdf>=1.23.0",
+  "fastapi>=0.104.0",
+  "uvicorn>=0.24.0",
+  "skidl>=1.2.0",
 ]
 
 [project.optional-dependencies]
-llm = ["openai>=1.0", "tiktoken>=0.6"]
-vision = [
-  "pillow>=10.3",
-  "pytesseract>=0.3.10",
-  "pdfminer.six>=20221105",
-  "camelot-py[cv]>=0.11.0",
-  "opencv-python-headless>=4.8",
-  "pypdf>=4.2"
-]
-eda = [
-  "skidl>=0.1.0",
-]
-ki = [
-  # KiCad's pcbnew is provided by KiCad; no pip package. This is a placeholder group.
-]
-
 test = ["pytest>=8.2"]
 
 [project.scripts]
+pcb = "pcbai.pipeline.cli:main"
 pcbai = "pcbai.pipeline.cli:main"
 
 [tool.pytest.ini_options]

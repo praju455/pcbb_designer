@@ -1,101 +1,150 @@
 # PCB Designer AI Agent
 
-An open-source agentic pipeline that turns a natural-language hardware description into a manufacturable PCB. The system automates:
+![Python](https://img.shields.io/badge/Python-3.11-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![KiCad](https://img.shields.io/badge/KiCad-7%2B-0055A4.svg)
+![Groq](https://img.shields.io/badge/Groq-Ready-f55036.svg)
 
-1) Requirement → Component selection (BOM)
-2) Datasheet retrieval → Footprint extraction → Footprint generation (.kicad_mod)
-3) Schematic synthesis (netlist) from component reference designs and constraints
-4) PCB placement and routing (via KiCad + Freerouting or vendor tools adapters)
-5) Gerber generation via EDA tool backends (KiCad first-class; adapters for Altium/Cadence planned)
+**Plain English -> Manufacturable PCB, from your terminal**
 
-Status: early scaffold. Includes a working, parametric KiCad footprint generator for common packages and an extensible pipeline with clear interfaces for each step.
+![Demo placeholder](https://img.shields.io/badge/Demo-GIF%20Coming%20Soon-ffb703.svg)
 
-## Why
-- Speed up concept-to-board by automating tedious steps.
-- Keep humans-in-the-loop for safety while leveraging LLMs/CV for datasheet understanding.
-- Vendor-neutral core with adapters for popular EDA tools.
+## Why it exists
 
-## Architecture
-- Core config + logging
-- Pluggable LLM providers (OpenAI/Ollama/etc.)
-- Steps:
-  - requirements_parser → bom_generator → datasheet_fetcher → footprint_generator → schematic_synthesizer → pcb_router → gerber_exporter
-- Backends:
-  - KiCad backend (first-class, CLI-friendly)
-  - Adapters for Altium (COM/Script/PDN) and Cadence Allegro (SKILL/CLI) planned
+Describe a circuit in plain English and the agent will turn it into structured requirements, a BOM, cached datasheets, a KiCad schematic, a placed board, and fab outputs you can validate before manufacturing.
 
-```text
-pcb-designer-ai-agent/
-├─ README.md
-├─ LICENSE
-├─ pyproject.toml
-├─ .gitignore
-├─ src/pcbai/
-│  ├─ __init__.py
-│  ├─ core/
-│  │  ├─ config.py
-│  │  └─ logger.py
-│  ├─ llm/
-│  │  ├─ provider.py
-│  │  └─ providers/
-│  ├─ steps/
-│  │  ├─ requirements_parser.py
-│  │  ├─ bom_generator.py
-│  │  ├─ datasheet_fetcher.py
-│  │  ├─ footprint_generator.py   <-- working generator for SMD R/C and SOIC
-│  │  ├─ schematic_synthesizer.py
-│  │  ├─ pcb_router.py
-│  │  └─ gerber_exporter.py
-│  └─ pipeline/
-│     └─ cli.py
-└─ tests/
-   └─ test_footprint_generator.py
-```
+## Sticker Wall
 
-## Quickstart
-- Python 3.10+
-- KiCad 7/8 recommended for future steps (not required to try the footprint generator)
+- "Fast LLM Brain" powered by Groq, Gemini, or Ollama, with verified model selection.
+- "EDA Hands" using KiCad CLI, generated KiCad files, and optional SKiDL.
+- "Factory Inspector" with built-in DFM checks and JLCPCB rule awareness.
 
-Install:
+## Installation
 
 ```bash
+git clone https://github.com/praju455/pcbb_designer.git
+cd pcb-designer-ai-agent
+python -m venv .venv
+. .venv/bin/activate
 pip install -e .
 ```
 
-Generate a 0603 resistor footprint:
+On Windows PowerShell:
 
-```bash
-pcbai footprint --type smd_rc --name R_0603 --body-l 1.6 --body-w 0.8 --pad-l 0.9 --pad-w 0.8 --gap 0.8 --out build/
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .
 ```
 
-Generate a 14-pin SOIC footprint:
+Copy the template and add your provider credentials locally:
 
 ```bash
-pcbai footprint --type soic --name SOIC-14_3.9x8.7mm_P1.27mm \
-  --pins 14 --pitch 1.27 --body-l 8.7 --body-w 3.9 --pad-l 1.5 --pad-w 0.6 --row-offset 2.3 --out build/
+cp .env.example .env
 ```
 
-You will find `.kicad_mod` files in `build/` to drop into a KiCad library.
+## LLM provider setup
 
-## Vision + Datasheet extraction
-- Planned: PDF/image → text/structured extraction using OCR + LLM-Vision to infer package params when IPC tables are present.
-- Today: you can provide measured params directly to the generator.
+### Groq
 
-## Schematic/Netlist synthesis
-- Planned: SKiDL-based netlist generation from component set + reference circuits.
+```env
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
 
-## PCB routing and Gerbers
-- Planned: KiCad pcbnew and Freerouting integration; `kicad-cli` for Gerbers.
-- Adapters for Altium/Cadence will require respective licensed tool installations and API keys.
+### Gemini
 
-## Configuration
-- All runtime config via environment variables or a YAML file, see `src/pcbai/core/config.py`.
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+### Ollama
+
+```bash
+ollama serve
+ollama pull mistral
+```
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=mistral
+```
+
+## Quickstart
+
+```bash
+pcb info
+pcb generate "555 timer with LED"
+pcb place --input build/design.kicad_sch && pcb validate --input build/design.kicad_pcb
+```
+
+## Command reference
+
+```bash
+pcb generate "circuit description" [--output DIR] [--provider groq|ollama|gemini]
+pcb place [--input FILE] [--optimize thermal|signal|default]
+pcb validate [--input FILE]
+pcb export [--input FILE] [--output DIR] [--gerber] [--zip]
+pcb info [--provider groq|ollama|gemini]
+```
+
+All commands support `--verbose`. `generate`, `place`, and `validate` emit JSON to stdout so they are easy to chain in scripts.
+
+## Architecture
+
+```text
+Natural language
+      |
+      v
+requirements_parser
+      |
+      v
+bom_generator
+      |
+      v
+datasheet_fetcher --> datasheet cache
+      |
+      v
+schematic_synthesizer --> .kicad_sch + sidecar JSON
+      |
+      v
+pcb_router --> .kicad_pcb
+      |
+      +--> dfm_validator
+      |
+      +--> gerber_exporter
+```
+
+## Available models
+
+Run `pcb info` and the CLI will query the configured provider and show only the models your current Groq, Gemini, or Ollama environment actually exposes. The default Gemini target is the verified stable model `gemini-2.5-flash`, and the default Groq target is the verified stronger general model `llama-3.3-70b-versatile`.
+
+## KiCad notes
+
+- KiCad 7 or newer is recommended.
+- `kicad-cli` is required for Gerber and drill export.
+- Generated schematic and PCB files are starter artifacts and may need polish in the KiCad GUI for complex production work.
+
+## Roadmap
+
+- Better symbol and footprint mapping from datasheets.
+- Real KiCad Python API integration for richer board edits.
+- Improved routing heuristics and constraint solving.
+- Optional FastAPI web layer for remote pipeline execution.
+- More manufacturer-specific DFM rule packs.
 
 ## Contributing
-- PRs welcome. Focus areas:
-  - Datasheet parsers and CV feature extractors
-  - More package generators (QFN/QFP/BGA)
-  - SKiDL schematic templates
-  - EDA tool adapters
 
+- Use Python 3.11.
+- Keep all pipeline I/O validated with Pydantic v2 models.
+- Add type hints and docstrings to every public function and class.
+- Prefer deterministic fallbacks when an LLM or external tool is unavailable.
+- Run tests before opening a pull request.
 
+## License
+
+Released under the terms of the repository [LICENSE](LICENSE).
