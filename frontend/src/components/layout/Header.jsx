@@ -1,4 +1,4 @@
-import { Cpu, MoveRight } from "lucide-react";
+import { MoveRight } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const links = [
@@ -28,8 +28,8 @@ export default function Header({ health, healthQuery }) {
     <header className="mb-6 rounded-[2rem] border border-border/70 bg-card/80 px-5 py-5 shadow-paper backdrop-blur md:px-8">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] border border-border/80 bg-white/70 text-primary shadow-paper">
-            <Cpu size={24} />
+          <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1.35rem] border border-border/80 bg-white/70 shadow-paper">
+            <img src="/nexus-mark.svg" alt="Nexus" className="h-11 w-11" />
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.45em] text-primary">Nexus</div>

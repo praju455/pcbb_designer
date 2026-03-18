@@ -22,12 +22,10 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(98, 80, 62, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(98, 80, 62, 0.03) 1px, transparent 1px);
-  background-size: 28px 28px;
-  mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
-  opacity: 0.65;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(139, 94, 60, 0.08), transparent 24%),
+    radial-gradient(circle at 80% 78%, rgba(69, 107, 83, 0.08), transparent 18%);
+  opacity: 0.9;
 }
 
 #root {

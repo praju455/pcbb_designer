@@ -11,8 +11,8 @@ export default function TerminalOutput({ jobId }) {
     if (!terminalRef.current) return undefined;
     const terminal = new Terminal({
       theme: {
-        background: "#05070d",
-        foreground: "#22c55e"
+        background: "#16100d",
+        foreground: "#d8d1c5"
       },
       fontFamily: "JetBrains Mono, monospace",
       fontSize: 12
@@ -22,7 +22,7 @@ export default function TerminalOutput({ jobId }) {
     terminal.open(terminalRef.current);
     fitAddon.fit();
     if (!jobId) {
-      terminal.writeln("[NEXUS] waiting for job...");
+      terminal.writeln("[NEXUS] waiting for a generation run...");
       return () => terminal.dispose();
     }
     const socket = connectToLogs(jobId, (message) => terminal.writeln(`[${message.step.toUpperCase()}] ${message.message}`));
@@ -32,5 +32,5 @@ export default function TerminalOutput({ jobId }) {
     };
   }, [jobId]);
 
-  return <div ref={terminalRef} className="glass rounded-3xl p-3" style={{ height: 320 }} />;
+  return <div ref={terminalRef} className="glass rounded-[2rem] p-3" style={{ height: 320 }} />;
 }

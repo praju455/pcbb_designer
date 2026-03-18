@@ -1,5 +1,9 @@
 # Nexus
 
+<p align="center">
+  <img src="docs/assets/nexus-mark.svg" alt="Nexus mark" width="140" />
+</p>
+
 ![Python](https://img.shields.io/badge/Python-3.11-blue.svg)
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb.svg)
 ![Backend](https://img.shields.io/badge/Backend-FastAPI-009688.svg)
