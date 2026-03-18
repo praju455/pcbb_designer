@@ -116,6 +116,8 @@ async def _run_job(job_id: str, request: GenerateRequest) -> None:
         job.current_step = "schematic"
         await _emit_log(job_id, "schematic", "info", "Synthesizing schematic")
         schematic_path = synthesize_schematic(bom, datasheets, output_dir=output_dir)
+        netlist_path = Path(schematic_path).with_suffix(".netlist.json")
+        netlist_payload = json.loads(netlist_path.read_text(encoding="utf-8")) if netlist_path.exists() else {}
         job.steps_completed.append("schematic")
         job.progress_percent = 75
 
@@ -136,6 +138,7 @@ async def _run_job(job_id: str, request: GenerateRequest) -> None:
         job.result = JobResult(
             requirements=requirements.model_dump(),
             bom=[item.model_dump() for item in bom.items],
+            netlist=netlist_payload,
             files=[schematic_path, pcb_path],
             total_cost=bom.total_cost_usd,
         )

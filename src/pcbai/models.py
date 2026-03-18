@@ -186,6 +186,7 @@ class JobResult(BaseModel):
 
     requirements: dict[str, Any] = Field(default_factory=dict)
     bom: list[dict[str, Any]] = Field(default_factory=list)
+    netlist: dict[str, Any] = Field(default_factory=dict)
     files: list[str] = Field(default_factory=list)
     total_cost: float = Field(default=0.0, ge=0.0)
 
