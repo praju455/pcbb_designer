@@ -24,7 +24,7 @@ export default {
       },
       animation: {
         floaty: "floaty 7s ease-in-out infinite",
-        pulse-soft: "pulseSoft 2.4s ease-in-out infinite"
+        "pulse-soft": "pulseSoft 2.4s ease-in-out infinite"
       },
       keyframes: {
         floaty: {

@@ -9,11 +9,7 @@
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(139, 94, 60, 0.18), transparent 26%),
-    radial-gradient(circle at 85% 15%, rgba(72, 91, 74, 0.14), transparent 22%),
-    radial-gradient(circle at bottom right, rgba(214, 189, 148, 0.18), transparent 18%),
-    linear-gradient(180deg, #f7f1e7 0%, #f1e8db 45%, #eee4d5 100%);
+  background: linear-gradient(180deg, #f7f1e7 0%, #f1e8db 45%, #eee4d5 100%);
   color: #1f1a17;
 }
 
@@ -22,10 +18,19 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(139, 94, 60, 0.08), transparent 24%),
-    radial-gradient(circle at 80% 78%, rgba(69, 107, 83, 0.08), transparent 18%);
+  background: linear-gradient(135deg, rgba(139, 94, 60, 0.08), transparent 48%);
   opacity: 0.9;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: auto 0 0 auto;
+  height: 38rem;
+  width: 38rem;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(69, 107, 83, 0.1), transparent 62%);
+  opacity: 0.85;
 }
 
 #root {

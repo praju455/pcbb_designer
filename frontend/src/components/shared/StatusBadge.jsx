@@ -1,8 +1,8 @@
 const styles = {
-  ok: "bg-success/20 text-success border-success/40",
-  error: "bg-error/20 text-error border-error/40",
-  warning: "bg-warning/20 text-warning border-warning/40",
-  idle: "bg-white/10 text-text border-white/10"
+  ok: "bg-success/15 text-success border-success/30",
+  error: "bg-error/12 text-error border-error/30",
+  warning: "bg-warning/15 text-warning border-warning/30",
+  idle: "bg-white/60 text-text border-border/60"
 };
 
 export default function StatusBadge({ status = "idle", label }) {
