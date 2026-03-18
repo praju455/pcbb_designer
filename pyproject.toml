@@ -3,10 +3,10 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "circuitforge-ai"
+name = "nexus"
 version = "0.1.0"
-description = "CircuitForge AI: Plain English to manufacturable PCB generation from the terminal"
-authors = [{ name = "CircuitForge AI Contributors" }]
+description = "Nexus: AI command deck for circuit synthesis and manufacturable PCB workflows"
+authors = [{ name = "Nexus Contributors" }]
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

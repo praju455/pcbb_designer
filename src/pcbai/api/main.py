@@ -1,9 +1,10 @@
-"""FastAPI backend for CircuitForge AI."""
+"""FastAPI backend for Nexus."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,7 +55,7 @@ class ConfigUpdateRequest(BaseModel):
     values: dict[str, str]
 
 
-app = FastAPI(title="CircuitForge AI API", version=__version__)
+app = FastAPI(title="Nexus API", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

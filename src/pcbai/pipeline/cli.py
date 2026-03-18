@@ -1,4 +1,4 @@
-"""CircuitForge AI Typer CLI."""
+"""Nexus Typer CLI."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from pcbai.steps.requirements_parser import parse_requirements
 from pcbai.steps.schematic_synthesizer import synthesize_schematic
 
 
-app = typer.Typer(help="CircuitForge AI: Plain English -> Manufacturable PCB")
+app = typer.Typer(help="Nexus command deck for AI-assisted PCB synthesis")
 
 
 def _console() -> Console:
@@ -88,7 +88,7 @@ def generate_command(
                 f"Confidence: {verification_data.confidence_score}%\n"
                 f"Rounds: {verification_data.rounds_taken}\n"
                 f"Issues fixed: {len(verification_data.issues_fixed)}",
-                title="CircuitForge Verification",
+                title="Nexus Verification",
                 border_style="green" if verification_data.passed else "yellow",
             )
         )
@@ -167,7 +167,7 @@ def info_command() -> None:
 
     console = _console()
     settings = get_settings()
-    env_table = Table(title="CircuitForge AI Environment")
+    env_table = Table(title="Nexus Environment")
     env_table.add_column("Item")
     env_table.add_column("Value")
     env_table.add_row("Version", __version__)
@@ -204,7 +204,7 @@ def info_command() -> None:
     checks.add_row("PyMuPDF", "[green]installed[/green]" if importlib.util.find_spec("fitz") else "[red]missing[/red]")
     checks.add_row("SKiDL", "[green]installed[/green]" if importlib.util.find_spec("skidl") else "[red]missing[/red]")
     console.print(checks)
-    typer.echo(json.dumps({"project": "CircuitForge AI", "version": __version__}, indent=2))
+    typer.echo(json.dumps({"project": "Nexus", "version": __version__}, indent=2))
 
 
 def main() -> None:
