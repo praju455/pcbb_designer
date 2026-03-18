@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: nexus-backend
+    env: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -e .
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GENERATOR_LLM
+        value: groq
+      - key: VERIFIER_LLM
+        value: gemini
+      - key: OLLAMA_BASE_URL
+        value: http://localhost:11434
+      - key: OLLAMA_MODEL
+        value: mistral
+      - key: KICAD_OUTPUT_DIR
+        value: ./build
+      - key: KICAD_CLI_PATH
+        value: kicad-cli
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DFM_MIN_TRACE_WIDTH_MM
+        value: "0.2"
+      - key: DFM_MIN_CLEARANCE_MM
+        value: "0.2"
+      - key: DFM_MIN_VIA_DIAMETER_MM
+        value: "0.4"
+      - key: JLCPCB_MIN_TRACE_WIDTH_MM
+        value: "0.127"
+      - key: MAX_VERIFICATION_ROUNDS
+        value: "3"
+      - key: MIN_CONFIDENCE_SCORE
+        value: "75"
