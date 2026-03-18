@@ -1,4 +1,4 @@
-"""Groq-backed LLM provider implementation."""
+"""Groq provider implementation."""
 
 from __future__ import annotations
 
@@ -12,94 +12,65 @@ from pcbai.llm.provider import BaseLLMProvider, LLMProviderError
 
 
 class GroqLLMProvider(BaseLLMProvider):
-    """Generate completions using the Groq chat completions API."""
+    """LLM provider backed by Groq chat completions."""
 
     def __init__(self, console: Console | None = None) -> None:
-        """Initialize the Groq client from configuration."""
+        """Initialize the Groq SDK client."""
 
         settings = get_settings()
         if not settings.groq_api_key:
-            raise LLMProviderError("GROQ_API_KEY is not configured. Add it to your .env file or shell.")
-
+            raise LLMProviderError("GROQ_API_KEY is not set. Add it to .env before using Groq.")
         try:
             from groq import Groq
-        except ImportError as exc:  # pragma: no cover - depends on optional package
-            raise LLMProviderError("The 'groq' package is not installed. Run 'pip install groq'.") from exc
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise LLMProviderError("The groq package is not installed. Run pip install -e .") from exc
 
         self._settings = settings
         self._console = console or Console(stderr=True)
         self._client = Groq(api_key=settings.groq_api_key)
-        self._resolved_model: str | None = None
 
-    def _resolve_model(self) -> str:
-        """Choose the best available Groq model for structured agentic work."""
-
-        if self._resolved_model:
-            return self._resolved_model
-
-        preferred = [
-            self._settings.groq_model,
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "llama3-8b-8192",
-        ]
-        try:
-            available = self.list_available_models()
-        except LLMProviderError:
-            self._resolved_model = self._settings.groq_model
-            return self._resolved_model
-
-        for candidate in preferred:
-            if candidate in available:
-                self._resolved_model = candidate
-                return candidate
-
-        self._resolved_model = available[0] if available else self._settings.groq_model
-        return self._resolved_model
-
-    def _chat(self, messages: list[dict[str, str]]) -> str:
-        """Send a chat completion request to Groq."""
+    def _complete(self, messages: list[dict[str, str]]) -> str:
+        """Execute a chat completion request."""
 
         with self._console.status(
-            f"[bold cyan]Waiting for Groq ({self._resolve_model()})[/bold cyan]", spinner="dots"
+            f"[bold cyan]Groq generating with {self._settings.groq_model}[/bold cyan]",
+            spinner="dots",
         ):
             try:
                 response = self._client.chat.completions.create(
-                    model=self._resolve_model(),
+                    model=self._settings.groq_model,
                     messages=messages,
                     temperature=0.2,
                 )
             except Exception as exc:  # pragma: no cover - network dependent
                 raise LLMProviderError(f"Groq request failed: {exc}") from exc
 
-        content = response.choices[0].message.content if response.choices else ""
-        if not content:
+        if not response.choices or not response.choices[0].message.content:
             raise LLMProviderError("Groq returned an empty response.")
-        return content.strip()
+        return response.choices[0].message.content.strip()
 
     def generate(self, prompt: str) -> str:
-        """Generate plain text from a user prompt."""
+        """Generate plain text."""
 
-        return self._chat([{"role": "user", "content": prompt}])
+        return self._complete([{"role": "user", "content": prompt}])
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """Generate JSON conforming to a schema, retrying on parse failures."""
+        """Generate schema-shaped JSON, retrying on parse failures."""
 
         system_prompt = (
-            "You are a precise JSON generator. Return only valid JSON that conforms to the provided schema. "
-            "Do not use markdown fences or commentary."
+            "Return only valid JSON matching the provided schema. "
+            "Do not include markdown fences, explanations, or surrounding text."
         )
         schema_text = json.dumps(schema, indent=2)
         last_error: Exception | None = None
 
         for attempt in range(1, 4):
-            raw = self._chat(
+            raw = self._complete(
                 [
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
-                        "content": f"{prompt}\n\nJSON schema:\n{schema_text}\n\nAttempt: {attempt}",
+                        "content": f"{prompt}\n\nSchema:\n{schema_text}\n\nAttempt {attempt} of 3.",
                     },
                 ]
             )
@@ -108,18 +79,22 @@ class GroqLLMProvider(BaseLLMProvider):
             except json.JSONDecodeError as exc:
                 last_error = exc
 
-        raise LLMProviderError(f"Groq did not return valid JSON after 3 attempts: {last_error}")
+        raise LLMProviderError(f"Groq failed to return valid JSON after 3 attempts: {last_error}")
 
     def get_provider_name(self) -> str:
         """Return the provider name."""
 
         return "groq"
 
-    def list_available_models(self) -> list[str]:
-        """List models visible to the configured Groq account."""
+    def test_connection(self) -> bool:
+        """Test that Groq can complete a minimal request."""
 
         try:
-            models = self._client.models.list()
+            self._client.chat.completions.create(
+                model=self._settings.groq_model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+            )
         except Exception as exc:  # pragma: no cover - network dependent
-            raise LLMProviderError(f"Unable to list Groq models: {exc}") from exc
-        return sorted(model.id for model in getattr(models, "data", []))
+            raise LLMProviderError(f"Groq connection test failed: {exc}") from exc
+        return True

@@ -1,11 +1,10 @@
-"""Gemini-backed LLM provider implementation."""
+"""Gemini provider implementation."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-import requests
 from rich.console import Console
 
 from pcbai.core.config import get_settings
@@ -13,111 +12,76 @@ from pcbai.llm.provider import BaseLLMProvider, LLMProviderError
 
 
 class GeminiLLMProvider(BaseLLMProvider):
-    """Generate completions using the Gemini REST API."""
+    """LLM provider backed by Google Gemini Flash."""
 
     def __init__(self, console: Console | None = None) -> None:
-        """Initialize the provider from configuration."""
+        """Initialize the Gemini SDK client."""
 
-        self._settings = get_settings()
-        if not self._settings.gemini_api_key:
-            raise LLMProviderError("GEMINI_API_KEY is not configured. Add it to your .env file or shell.")
-        self._console = console or Console(stderr=True)
-        self._base_url = "https://generativelanguage.googleapis.com/v1beta"
-        self._resolved_model: str | None = None
-
-    def _resolve_model(self) -> str:
-        """Choose the best available Gemini model for this workflow."""
-
-        if self._resolved_model:
-            return self._resolved_model
-
-        preferred = [
-            self._settings.gemini_model,
-            "gemini-2.5-flash",
-            "gemini-flash-latest",
-            "gemini-2.5-flash-lite",
-            "gemini-3-pro-preview",
-        ]
+        settings = get_settings()
+        if not settings.gemini_api_key:
+            raise LLMProviderError("GEMINI_API_KEY is not set. Add it to .env before using Gemini.")
         try:
-            available = self.list_available_models()
-        except LLMProviderError:
-            self._resolved_model = self._settings.gemini_model
-            return self._resolved_model
+            import google.generativeai as genai
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise LLMProviderError("The google-generativeai package is not installed. Run pip install -e .") from exc
 
-        for candidate in preferred:
-            if candidate in available:
-                self._resolved_model = candidate
-                return candidate
+        genai.configure(api_key=settings.gemini_api_key)
+        self._genai = genai
+        self._settings = settings
+        self._console = console or Console(stderr=True)
+        self._model = genai.GenerativeModel(settings.gemini_model)
 
-        self._resolved_model = available[0] if available else self._settings.gemini_model
-        return self._resolved_model
+    def _complete(self, prompt: str) -> str:
+        """Execute a completion request."""
 
-    def _post(self, model: str, prompt: str, system: str | None = None) -> dict[str, Any]:
-        """Call a Gemini content generation endpoint."""
-
-        payload: dict[str, Any] = {"contents": [{"parts": [{"text": prompt}]}]}
-        if system:
-            payload["systemInstruction"] = {"parts": [{"text": system}]}
         with self._console.status(
-            f"[bold cyan]Waiting for Gemini ({model})[/bold cyan]", spinner="dots"
+            f"[bold cyan]Gemini verifying with {self._settings.gemini_model}[/bold cyan]",
+            spinner="dots",
         ):
             try:
-                response = requests.post(
-                    f"{self._base_url}/models/{model}:generateContent",
-                    params={"key": self._settings.gemini_api_key},
-                    json=payload,
-                    timeout=120,
-                )
-                response.raise_for_status()
-            except requests.RequestException as exc:
+                response = self._model.generate_content(prompt)
+            except Exception as exc:  # pragma: no cover - network dependent
                 raise LLMProviderError(f"Gemini request failed: {exc}") from exc
-        return response.json()
+
+        text = getattr(response, "text", "") or ""
+        if not text.strip():
+            raise LLMProviderError("Gemini returned an empty response.")
+        return text.strip()
 
     def generate(self, prompt: str) -> str:
-        """Generate plain text from a user prompt."""
+        """Generate plain text."""
 
-        payload = self._post(self._resolve_model(), prompt)
-        candidates = payload.get("candidates", [])
-        try:
-            return candidates[0]["content"]["parts"][0]["text"].strip()
-        except (IndexError, KeyError, TypeError) as exc:
-            raise LLMProviderError("Gemini returned an unexpected response payload.") from exc
+        return self._complete(prompt)
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """Generate JSON conforming to a schema, retrying on parse failures."""
+        """Generate schema-shaped JSON, retrying on parse failures."""
 
-        system_prompt = (
-            "Return only valid JSON matching the provided schema. "
-            "Do not wrap the response in markdown or explanation."
-        )
         schema_text = json.dumps(schema, indent=2)
+        json_prompt = (
+            "Return only valid JSON. Do not include markdown or extra commentary.\n\n"
+            f"Schema:\n{schema_text}\n\nTask:\n{prompt}"
+        )
         last_error: Exception | None = None
-        for attempt in range(1, 4):
-            payload = self._post(self._resolve_model(), f"{prompt}\n\nJSON schema:\n{schema_text}\n\nAttempt: {attempt}", system=system_prompt)
-            candidates = payload.get("candidates", [])
+
+        for _attempt in range(3):
+            raw = self._complete(json_prompt)
             try:
-                raw = candidates[0]["content"]["parts"][0]["text"].strip()
                 return json.loads(raw)
-            except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            except json.JSONDecodeError as exc:
                 last_error = exc
-        raise LLMProviderError(f"Gemini did not return valid JSON after 3 attempts: {last_error}")
+
+        raise LLMProviderError(f"Gemini failed to return valid JSON after 3 attempts: {last_error}")
 
     def get_provider_name(self) -> str:
         """Return the provider name."""
 
         return "gemini"
 
-    def list_available_models(self) -> list[str]:
-        """List Gemini models accessible with the configured key."""
+    def test_connection(self) -> bool:
+        """Test Gemini reachability with a small request."""
 
         try:
-            response = requests.get(
-                f"{self._base_url}/models",
-                params={"key": self._settings.gemini_api_key},
-                timeout=20,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise LLMProviderError(f"Unable to list Gemini models: {exc}") from exc
-        models = response.json().get("models", [])
-        return sorted(model.get("name", "").split("/")[-1] for model in models if model.get("name"))
+            self._model.generate_content("ping")
+        except Exception as exc:  # pragma: no cover - network dependent
+            raise LLMProviderError(f"Gemini connection test failed: {exc}") from exc
+        return True

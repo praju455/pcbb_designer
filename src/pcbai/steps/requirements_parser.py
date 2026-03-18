@@ -1,74 +1,18 @@
-"""Natural-language circuit requirements parsing."""
+"""Requirements parsing using the dual-LLM verification pipeline."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from pcbai.llm.provider import BaseLLMProvider, LLMProviderError, get_llm_provider
-from pcbai.models import CircuitRequirements, ComponentRequirement, ComponentType
-
-
-def _component_type_for_text(name: str, value: str) -> ComponentType:
-    """Infer a component type from loose text."""
-
-    text = f"{name} {value}".lower()
-    if "res" in text or "ohm" in text or text.endswith("k"):
-        return "resistor"
-    if "cap" in text or "uf" in text or "nf" in text or "pf" in text:
-        return "capacitor"
-    if "led" in text:
-        return "led"
-    if "transistor" in text or "mosfet" in text or "bjt" in text:
-        return "transistor"
-    if "conn" in text or "header" in text or "usb" in text or "jack" in text:
-        return "connector"
-    return "ic"
-
-
-def _default_components_from_text(natural_text: str) -> list[ComponentRequirement]:
-    """Create a conservative component list when the LLM is unavailable."""
-
-    lowered = natural_text.lower()
-    defaults: list[ComponentRequirement] = []
-    if "555" in lowered or "timer" in lowered:
-        defaults.extend(
-            [
-                ComponentRequirement(name="Timer IC", type="ic", value="NE555", quantity=1, package="DIP-8", notes="Core timing IC"),
-                ComponentRequirement(name="Current limiting resistor", type="resistor", value="330R", quantity=1, package="0603", notes="LED current limiting"),
-                ComponentRequirement(name="Timing resistor", type="resistor", value="10k", quantity=1, package="0603", notes="Timing network"),
-                ComponentRequirement(name="Timing capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Timing network"),
-                ComponentRequirement(name="Indicator LED", type="led", value="Red LED", quantity=1, package="0603", notes="Status output"),
-                ComponentRequirement(name="Power connector", type="connector", value="2-pin header", quantity=1, package="TH_2.54mm", notes="Power input"),
-            ]
-        )
-    elif "led" in lowered:
-        defaults.extend(
-            [
-                ComponentRequirement(name="Indicator LED", type="led", value="Red LED", quantity=1, package="0603", notes="Main indicator"),
-                ComponentRequirement(name="Current limiting resistor", type="resistor", value="330R", quantity=1, package="0603", notes="Series resistor"),
-                ComponentRequirement(name="Power connector", type="connector", value="2-pin header", quantity=1, package="TH_2.54mm", notes="Power input"),
-            ]
-        )
-    if not defaults:
-        defaults.append(
-            ComponentRequirement(
-                name=natural_text.strip().title() or "General IC",
-                type="ic",
-                value=natural_text.strip() or "Custom Circuit",
-                quantity=1,
-                package="TBD",
-                notes="Generated from natural language fallback",
-            )
-        )
-    return defaults
+from pcbai.llm.verifier import DualLLMVerifier
+from pcbai.models import CircuitRequirements, ComponentRequirement
 
 
 def _schema() -> dict[str, Any]:
-    """Return the JSON schema expected from the LLM."""
+    """Return the expected JSON schema for requirement extraction."""
 
     return {
         "type": "object",
@@ -90,56 +34,68 @@ def _schema() -> dict[str, Any]:
                         "package": {"type": "string"},
                         "notes": {"type": "string"},
                     },
+                    "required": ["name", "type", "value", "quantity", "package", "notes"],
                 },
             },
             "power_supply": {"type": "string"},
+            "frequency": {"type": "string"},
             "special_requirements": {"type": "array", "items": {"type": "string"}},
         },
-        "required": ["circuit_name", "description", "components", "power_supply", "special_requirements"],
+        "required": [
+            "circuit_name",
+            "description",
+            "components",
+            "power_supply",
+            "frequency",
+            "special_requirements",
+        ],
     }
 
 
-def _normalize_payload(payload: dict[str, Any], natural_text: str) -> CircuitRequirements:
-    """Fill missing fields with safe defaults and validate the final structure."""
+def _fallback_requirements(natural_text: str) -> CircuitRequirements:
+    """Return practical defaults when LLM generation is unavailable."""
 
-    payload = dict(payload)
-    raw_components = payload.get("components") or []
+    lowered = natural_text.lower()
     components: list[ComponentRequirement] = []
-
-    for item in raw_components:
-        item_dict = dict(item)
-        name = item_dict.get("name") or "Generic Component"
-        value = item_dict.get("value") or name
-        item_dict.setdefault("type", _component_type_for_text(name, value))
-        item_dict.setdefault("quantity", 1)
-        item_dict.setdefault("package", "TBD")
-        item_dict.setdefault("notes", "")
-        components.append(ComponentRequirement.model_validate(item_dict))
-
+    if "555" in lowered:
+        components = [
+            ComponentRequirement(name="Timer IC", type="ic", value="NE555", quantity=1, package="DIP-8", notes="Core timer"),
+            ComponentRequirement(name="Timing resistor", type="resistor", value="10k", quantity=1, package="0603", notes="Timing network"),
+            ComponentRequirement(name="Timing capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Timing network"),
+            ComponentRequirement(name="Indicator LED", type="led", value="Red LED", quantity=1, package="0603", notes="Output indicator"),
+            ComponentRequirement(name="Current limiting resistor", type="resistor", value="330R", quantity=1, package="0603", notes="LED current limit"),
+        ]
     if not components:
-        components = _default_components_from_text(natural_text)
+        components = [
+            ComponentRequirement(
+                name=natural_text.title() or "Custom Circuit",
+                type="ic",
+                value=natural_text or "Custom circuit",
+                quantity=1,
+                package="TBD",
+                notes="Fallback interpretation",
+            )
+        ]
+    return CircuitRequirements(
+        circuit_name=natural_text.title() or "AI Generated Circuit",
+        description=natural_text,
+        components=components,
+        power_supply="5V DC",
+        frequency="",
+        special_requirements=[],
+    )
 
-    normalized = {
-        "circuit_name": payload.get("circuit_name") or natural_text.strip().title() or "AI Generated Circuit",
-        "description": payload.get("description") or natural_text.strip(),
-        "components": [component.model_dump() for component in components],
-        "power_supply": payload.get("power_supply") or "5V DC",
-        "special_requirements": payload.get("special_requirements") or [],
-    }
-    return CircuitRequirements.model_validate(normalized)
 
+def _render(requirements: CircuitRequirements, console: Console) -> None:
+    """Print the parsed requirements as a Rich table."""
 
-def _render_requirements_table(requirements: CircuitRequirements, console: Console) -> None:
-    """Print a rich summary of the parsed circuit requirements."""
-
-    table = Table(title=f"Parsed Requirements: {requirements.circuit_name}")
+    table = Table(title=f"Requirements: {requirements.circuit_name}")
     table.add_column("Name")
     table.add_column("Type")
     table.add_column("Value")
     table.add_column("Qty", justify="right")
     table.add_column("Package")
     table.add_column("Notes")
-
     for component in requirements.components:
         table.add_row(
             component.name,
@@ -149,39 +105,27 @@ def _render_requirements_table(requirements: CircuitRequirements, console: Conso
             component.package,
             component.notes,
         )
-
     console.print(table)
     console.print(f"[bold]Power:[/bold] {requirements.power_supply}")
-    if requirements.special_requirements:
-        console.print(f"[bold]Special requirements:[/bold] {', '.join(requirements.special_requirements)}")
+    if requirements.frequency:
+        console.print(f"[bold]Frequency:[/bold] {requirements.frequency}")
 
 
-def parse_requirements(
-    natural_text: str,
-    provider: BaseLLMProvider | None = None,
-    console: Console | None = None,
-) -> CircuitRequirements:
-    """Parse natural language into validated circuit requirements."""
+def parse_requirements(natural_text: str, console: Console | None = None) -> CircuitRequirements:
+    """Parse a natural-language circuit description into validated requirements."""
 
-    console = console or Console()
-    provider = provider or get_llm_provider()
+    console = console or Console(stderr=True)
+    verifier = DualLLMVerifier(console=console)
     prompt = (
-        "Extract structured PCB design requirements from the following request. "
-        "Be practical and infer standard support components when they are obvious.\n\n"
-        f"Request: {natural_text}"
+        "Convert the following circuit idea into structured PCB requirements. "
+        "Infer the obvious support components and mention any special requirements.\n\n"
+        f"{natural_text}"
     )
-
     try:
-        payload = provider.generate_json(prompt, _schema())
-    except (LLMProviderError, ValidationError, RuntimeError):
-        payload = {
-            "circuit_name": natural_text.strip().title() or "AI Generated Circuit",
-            "description": natural_text.strip(),
-            "components": [component.model_dump() for component in _default_components_from_text(natural_text)],
-            "power_supply": "5V DC",
-            "special_requirements": [],
-        }
+        result = verifier.generate_and_verify(prompt, _schema())
+        requirements = CircuitRequirements.model_validate(result.netlist)
+    except Exception:
+        requirements = _fallback_requirements(natural_text)
 
-    requirements = _normalize_payload(payload, natural_text)
-    _render_requirements_table(requirements, console)
+    _render(requirements, console)
     return requirements

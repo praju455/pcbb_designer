@@ -1,4 +1,4 @@
-"""Ollama-backed LLM provider implementation."""
+"""Ollama local provider implementation."""
 
 from __future__ import annotations
 
@@ -13,28 +13,27 @@ from pcbai.llm.provider import BaseLLMProvider, LLMProviderError
 
 
 class OllamaLLMProvider(BaseLLMProvider):
-    """Generate completions using a local Ollama server."""
+    """LLM provider backed by a local Ollama daemon."""
 
     def __init__(self, console: Console | None = None) -> None:
-        """Initialize the provider from configuration."""
+        """Initialize the Ollama provider."""
 
         self._settings = get_settings()
         self._console = console or Console(stderr=True)
 
-    def _check_running(self) -> None:
-        """Ensure the Ollama daemon is reachable."""
+    def _ensure_running(self) -> None:
+        """Ensure the Ollama daemon is available."""
 
         try:
             response = requests.get(f"{self._settings.ollama_base_url}/api/tags", timeout=3)
+            response.raise_for_status()
         except requests.RequestException as exc:
-            raise LLMProviderError("Ollama not running. Start with: ollama serve") from exc
-        if response.status_code >= 400:
-            raise LLMProviderError("Ollama not running. Start with: ollama serve")
+            raise LLMProviderError("Ollama not running. Run: ollama serve") from exc
 
-    def _generate(self, prompt: str, system: str | None = None) -> str:
-        """Call the Ollama generate endpoint."""
+    def _complete(self, prompt: str, system: str | None = None) -> str:
+        """Execute a local generation request."""
 
-        self._check_running()
+        self._ensure_running()
         payload: dict[str, Any] = {
             "model": self._settings.ollama_model,
             "prompt": prompt,
@@ -44,7 +43,8 @@ class OllamaLLMProvider(BaseLLMProvider):
             payload["system"] = system
 
         with self._console.status(
-            f"[bold cyan]Waiting for Ollama ({self._settings.ollama_model})[/bold cyan]", spinner="dots"
+            f"[bold cyan]Ollama generating with {self._settings.ollama_model}[/bold cyan]",
+            spinner="dots",
         ):
             try:
                 response = requests.post(
@@ -56,48 +56,39 @@ class OllamaLLMProvider(BaseLLMProvider):
             except requests.RequestException as exc:
                 raise LLMProviderError(f"Ollama request failed: {exc}") from exc
 
-        content = response.json().get("response", "").strip()
-        if not content:
+        text = response.json().get("response", "").strip()
+        if not text:
             raise LLMProviderError("Ollama returned an empty response.")
-        return content
+        return text
 
     def generate(self, prompt: str) -> str:
-        """Generate plain text from a user prompt."""
+        """Generate plain text."""
 
-        return self._generate(prompt)
+        return self._complete(prompt)
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """Generate JSON conforming to a schema, retrying on parse failures."""
+        """Generate schema-shaped JSON, retrying on parse failures."""
 
-        system_prompt = (
-            "You are a precise JSON generator. Return only valid JSON that conforms to the provided schema. "
-            "Do not use markdown fences or explanatory text."
-        )
         schema_text = json.dumps(schema, indent=2)
+        system = "Return only valid JSON matching the provided schema."
         last_error: Exception | None = None
 
         for attempt in range(1, 4):
-            raw = self._generate(f"{prompt}\n\nJSON schema:\n{schema_text}\n\nAttempt: {attempt}", system=system_prompt)
+            raw = self._complete(f"{prompt}\n\nSchema:\n{schema_text}\n\nAttempt {attempt} of 3.", system=system)
             try:
                 return json.loads(raw)
             except json.JSONDecodeError as exc:
                 last_error = exc
 
-        raise LLMProviderError(f"Ollama did not return valid JSON after 3 attempts: {last_error}")
+        raise LLMProviderError(f"Ollama failed to return valid JSON after 3 attempts: {last_error}")
 
     def get_provider_name(self) -> str:
         """Return the provider name."""
 
         return "ollama"
 
-    def list_available_models(self) -> list[str]:
-        """List locally available Ollama models."""
+    def test_connection(self) -> bool:
+        """Return whether Ollama is reachable."""
 
-        self._check_running()
-        try:
-            response = requests.get(f"{self._settings.ollama_base_url}/api/tags", timeout=10)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise LLMProviderError(f"Unable to list Ollama models: {exc}") from exc
-        models = response.json().get("models", [])
-        return sorted(model.get("name", "") for model in models if model.get("name"))
+        self._ensure_running()
+        return True

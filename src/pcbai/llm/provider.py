@@ -9,7 +9,7 @@ from pcbai.core.config import get_settings
 
 
 class LLMProviderError(RuntimeError):
-    """Raised when an LLM provider cannot fulfill a request."""
+    """Raised when an LLM provider cannot satisfy a request."""
 
 
 class BaseLLMProvider(ABC):
@@ -17,71 +17,49 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     def generate(self, prompt: str) -> str:
-        """Generate a plain-text completion."""
+        """Generate plain text for a prompt."""
 
     @abstractmethod
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """Generate JSON matching a supplied schema."""
+        """Generate JSON that conforms to a supplied schema."""
 
     @abstractmethod
     def get_provider_name(self) -> str:
-        """Return a human-readable provider name."""
+        """Return the provider name."""
 
-    def list_available_models(self) -> list[str]:
-        """Return models exposed by the provider when supported."""
-
-        return []
-
-
-class UnsupportedLLMProvider(BaseLLMProvider):
-    """Provider used when the configured backend is not implemented."""
-
-    def __init__(self, provider_name: str) -> None:
-        """Store the provider that was requested."""
-
-        self._provider_name = provider_name
-
-    def generate(self, prompt: str) -> str:
-        """Raise a descriptive error for unsupported backends."""
-
-        raise LLMProviderError(
-            f"LLM provider '{self._provider_name}' is not implemented in this repository. "
-            "Use 'groq' or 'ollama', or add a provider implementation."
-        )
-
-    def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """Raise a descriptive error for unsupported backends."""
-
-        raise LLMProviderError(
-            f"LLM provider '{self._provider_name}' is not implemented in this repository. "
-            "Use 'groq' or 'ollama', or add a provider implementation."
-        )
-
-    def get_provider_name(self) -> str:
-        """Return the configured provider name."""
-
-        return self._provider_name
-
-    def list_available_models(self) -> list[str]:
-        """Return an empty list for unsupported providers."""
-
-        return []
+    @abstractmethod
+    def test_connection(self) -> bool:
+        """Return whether the provider can be reached successfully."""
 
 
-def get_llm_provider() -> BaseLLMProvider:
-    """Instantiate the configured LLM backend."""
+def get_llm_provider(name: str) -> BaseLLMProvider:
+    """Return a concrete provider for the supplied provider name."""
 
-    settings = get_settings()
-    if settings.llm_provider == "groq":
+    normalized = name.strip().lower()
+    if normalized == "groq":
         from pcbai.llm.providers.groq_provider import GroqLLMProvider
 
         return GroqLLMProvider()
-    if settings.llm_provider == "ollama":
-        from pcbai.llm.providers.ollama_provider import OllamaLLMProvider
-
-        return OllamaLLMProvider()
-    if settings.llm_provider == "gemini":
+    if normalized == "gemini":
         from pcbai.llm.providers.gemini_provider import GeminiLLMProvider
 
         return GeminiLLMProvider()
-    return UnsupportedLLMProvider(settings.llm_provider)
+    if normalized == "ollama":
+        from pcbai.llm.providers.ollama_provider import OllamaLLMProvider
+
+        return OllamaLLMProvider()
+    raise LLMProviderError(f"Unsupported LLM provider '{name}'. Expected groq, gemini, or ollama.")
+
+
+def get_generator_llm() -> BaseLLMProvider:
+    """Return the configured generator provider."""
+
+    settings = get_settings()
+    return get_llm_provider(settings.generator_llm)
+
+
+def get_verifier_llm() -> BaseLLMProvider:
+    """Return the configured verifier provider."""
+
+    settings = get_settings()
+    return get_llm_provider(settings.verifier_llm)

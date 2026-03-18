@@ -23,7 +23,7 @@ Describe a circuit in plain English and the agent will turn it into structured r
 
 ```bash
 git clone https://github.com/praju455/pcbb_designer.git
-cd pcb-designer-ai-agent
+cd pcbb-designer
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
