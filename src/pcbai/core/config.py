@@ -44,6 +44,16 @@ class Settings(BaseSettings):
         self.kicad_output_dir.mkdir(parents=True, exist_ok=True)
         return self.kicad_output_dir
 
+    @property
+    def frontend_origins(self) -> list[str]:
+        """Return normalized frontend origins for CORS checks."""
+
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.frontend_origin.split(",")
+            if origin.strip()
+        ]
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
