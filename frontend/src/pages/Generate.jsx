@@ -112,7 +112,11 @@ export default function Generate() {
       <div className="grid gap-6 xl:grid-cols-3">
         <RequirementsSummary requirements={activeJob?.result?.requirements || {}} />
         <BOMTable items={activeJob?.result?.bom || []} />
-        <SchematicPreview files={activeJob?.result?.files || []} bomItems={activeJob?.result?.bom || []} />
+        <SchematicPreview
+          files={activeJob?.result?.files || []}
+          bomItems={activeJob?.result?.bom || []}
+          netlist={activeJob?.result?.netlist || {}}
+        />
       </div>
     </div>
   );
