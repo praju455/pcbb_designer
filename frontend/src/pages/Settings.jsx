@@ -16,7 +16,7 @@ export default function Settings() {
             <input placeholder="Groq API key" value={current.groq_api_key || ""} onChange={(event) => setForm((prev) => ({ ...prev, GROQ_API_KEY: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />
             <input placeholder="Groq model" value={current.groq_model || ""} onChange={(event) => setForm((prev) => ({ ...prev, GROQ_MODEL: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />
             <input placeholder="Gemini API key" value={current.gemini_api_key || ""} onChange={(event) => setForm((prev) => ({ ...prev, GEMINI_API_KEY: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />
-            <input placeholder="Gemini model" value={current.gemini_model || ""} onChange={(event) => setForm((prev) => ({ ...prev, GEMINI_MODEL: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />
+            <input placeholder="Gemini model (gemini-2.5-flash)" value={current.gemini_model || ""} onChange={(event) => setForm((prev) => ({ ...prev, GEMINI_MODEL: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />
           </div>
           <div className="space-y-4">
             <input placeholder="Ollama base URL" value={current.ollama_base_url || ""} onChange={(event) => setForm((prev) => ({ ...prev, OLLAMA_BASE_URL: event.target.value }))} className="w-full rounded-2xl border border-white/10 bg-black/20 p-3" />

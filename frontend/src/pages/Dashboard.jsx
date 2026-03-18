@@ -16,8 +16,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 xl:grid-cols-4">
-        <StatusCard title="Generator" value={config.generator_llm || "Groq"} subtitle={config.groq_model || "llama3-8b-8192"} status={health.groq_status === "ok" ? "ok" : "error"} />
-        <StatusCard title="Verifier" value={config.verifier_llm || "Gemini"} subtitle={config.gemini_model || "gemini-1.5-flash"} status={health.gemini_status === "ok" ? "ok" : "error"} />
+        <StatusCard title="Generator" value={config.generator_llm || "Groq"} subtitle={config.groq_model || "llama-3.3-70b-versatile"} status={health.groq_status === "ok" ? "ok" : "error"} />
+        <StatusCard title="Verifier" value={config.verifier_llm || "Gemini"} subtitle={config.gemini_model || "gemini-2.5-flash"} status={health.gemini_status === "ok" ? "ok" : "error"} />
         <StatusCard title="Backend" value={health.version ? "Connected" : "Offline"} subtitle="Render or local FastAPI" status={health.version ? "ok" : "error"} />
         <StatusCard title="Designs" value={`${recent.length}`} subtitle="Recent outputs" status="idle" />
       </div>

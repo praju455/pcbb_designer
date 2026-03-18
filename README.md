@@ -11,19 +11,39 @@
 
 Nexus is a dual-LLM PCB workflow where Groq generates circuit artifacts, Gemini challenges them, and the pipeline loops until the design is stronger. It includes a CLI, a FastAPI backend, and a React control room.
 
-## Dual-LLM architecture
+## Full Architecture
 
-```text
-User Intent
-    |
-    v
-Groq Generator -----> draft requirements / BOM / netlist
-    ^                          |
-    |                          v
-    +------ Gemini Verifier <- audit, fixes, confidence
-                              |
-                              v
-                      KiCad artifacts + DFM report
+```mermaid
+flowchart LR
+    U["User Prompt"] --> CLI["Nexus CLI"]
+    U --> WEB["Nexus Frontend"]
+    WEB --> API["FastAPI Backend"]
+    CLI --> CORE["Pipeline Orchestrator"]
+    API --> CORE
+
+    CORE --> PARSE["Requirements Parser"]
+    PARSE --> GROQ["Groq Generator"]
+    GROQ --> GEMINI["Gemini Verifier"]
+    GEMINI --> FIX["Groq Fix Loop"]
+    FIX --> FINAL["Gemini Final Pass"]
+
+    FINAL --> BOM["BOM Generator"]
+    BOM --> DATA["Datasheet Fetcher"]
+    DATA --> SCH["Schematic Synthesizer"]
+    SCH --> PCB["PCB Router"]
+    PCB --> DFM["DFM Validator"]
+    PCB --> GERBER["Gerber Exporter"]
+
+    DATA --> CACHE["Datasheet Cache"]
+    SCH --> FILES["KiCad Schematic + Netlist"]
+    PCB --> BOARD["KiCad PCB"]
+    DFM --> REPORT["Fab Report + Fixes"]
+    GERBER --> ZIP["Fab Package"]
+
+    API --> WS["WebSocket Logs"]
+    WS --> WEB
+    WEB --> STATUS["Backend Status Button"]
+    WEB --> OLLAMA["Local Ollama Controls"]
 ```
 
 ## Quick demo
@@ -45,11 +65,27 @@ cd frontend
 npm install
 ```
 
-## API keys
+## .env
 
-- Groq: create a free key and place it in `.env` as `GROQ_API_KEY`.
-- Gemini: create a free key and place it in `.env` as `GEMINI_API_KEY`.
-- Ollama: optional local fallback. Run `ollama serve` and `ollama pull mistral`.
+```env
+GROQ_API_KEY=
+GROQ_MODEL=llama-3.3-70b-versatile
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+GENERATOR_LLM=groq
+VERIFIER_LLM=gemini
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=mistral
+KICAD_OUTPUT_DIR=./build
+KICAD_CLI_PATH=kicad-cli
+LOG_LEVEL=INFO
+DFM_MIN_TRACE_WIDTH_MM=0.2
+DFM_MIN_CLEARANCE_MM=0.2
+DFM_MIN_VIA_DIAMETER_MM=0.4
+JLCPCB_MIN_TRACE_WIDTH_MM=0.127
+MAX_VERIFICATION_ROUNDS=3
+MIN_CONFIDENCE_SCORE=75
+```
 
 ## Quickstart
 
