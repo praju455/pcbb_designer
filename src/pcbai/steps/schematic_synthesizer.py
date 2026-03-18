@@ -1,4 +1,4 @@
-"""Schematic synthesis with dual-LLM netlist verification."""
+"""Schematic synthesis with stronger rule-based netlist generation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from rich.table import Table
 
 from pcbai.core.config import get_settings
 from pcbai.llm.provider import LLMProviderError, get_generator_llm, get_verifier_llm
-from pcbai.models import BillOfMaterials, DatasheetInfo, NetDescription, NetPin, NetlistDescription
+from pcbai.models import BOMItem, BillOfMaterials, DatasheetInfo, NetDescription, NetPin, NetlistDescription
 
 
 def _netlist_schema() -> dict[str, Any]:
@@ -51,38 +51,222 @@ def _netlist_schema() -> dict[str, Any]:
     }
 
 
-def _fallback_netlist(bom: BillOfMaterials) -> NetlistDescription:
-    """Create a conservative fallback netlist."""
+def _net(reference: str, pin_number: str, pin_name: str) -> NetPin:
+    """Create a net pin object."""
+
+    return NetPin(reference=reference, pin_number=pin_number, pin_name=pin_name)
+
+
+def _find_items(items: list[BOMItem], prefix: str) -> list[BOMItem]:
+    """Return items matching a reference prefix."""
+
+    return [item for item in items if item.reference.startswith(prefix)]
+
+
+def _find_first(items: list[BOMItem], prefix: str) -> BOMItem | None:
+    """Return the first matching item for a prefix."""
+
+    for item in items:
+        if item.reference.startswith(prefix):
+            return item
+    return None
+
+
+def _looks_like_timer(item: BOMItem) -> bool:
+    """Return true when the BOM item resembles a 555 timer."""
+
+    combined = f"{item.value} {item.part_number} {item.manufacturer}".upper()
+    return "555" in combined
+
+
+def _split_555_passives(
+    bom: BillOfMaterials,
+) -> tuple[BOMItem | None, BOMItem | None, BOMItem | None, BOMItem | None, BOMItem | None, BOMItem | None, BOMItem | None]:
+    """Classify common passives for a 555 astable circuit."""
+
+    resistors = _find_items(bom.items, "R")
+    capacitors = _find_items(bom.items, "C")
+    led_drive = next((item for item in resistors if "330" in item.value.upper() or "470" in item.value.upper()), None)
+    timing_resistors = [item for item in resistors if item != led_drive]
+    timing_resistor_a = timing_resistors[0] if timing_resistors else None
+    timing_resistor_b = timing_resistors[1] if len(timing_resistors) > 1 else timing_resistor_a
+    decoupling = next((item for item in capacitors if "100N" in item.value.upper()), None)
+    control_cap = next((item for item in capacitors if "10N" in item.value.upper()), None)
+    excluded_refs = {item.reference for item in (decoupling, control_cap) if item is not None}
+    timing_cap = next((item for item in capacitors if item.reference not in excluded_refs), None)
+    led = _find_first(bom.items, "D")
+    return timing_resistor_a, timing_resistor_b, led_drive, timing_cap, decoupling, control_cap, led
+
+
+def _build_555_astable_netlist(bom: BillOfMaterials) -> NetlistDescription:
+    """Create a practical NE555 astable oscillator netlist."""
+
+    timer = next((item for item in bom.items if _looks_like_timer(item)), None)
+    if timer is None:
+        return NetlistDescription()
+
+    timing_resistor_a, timing_resistor_b, led_drive, timing_cap, decoupling, control_cap, led = _split_555_passives(bom)
+
+    nets: list[NetDescription] = [
+        NetDescription(
+            net_name="VCC",
+            pins=[_net(timer.reference, "8", "VCC"), _net(timer.reference, "4", "RESET")],
+            notes="Primary 5V supply rail and reset tie-high.",
+        ),
+        NetDescription(
+            net_name="GND",
+            pins=[_net(timer.reference, "1", "GND")],
+            notes="Ground reference for the timer and output stage.",
+        ),
+        NetDescription(
+            net_name="TIMING_NODE",
+            pins=[_net(timer.reference, "2", "TRIG"), _net(timer.reference, "6", "THRESH")],
+            notes="Joined trigger and threshold node for astable timing.",
+        ),
+        NetDescription(
+            net_name="DISCHARGE_NODE",
+            pins=[_net(timer.reference, "7", "DISCH")],
+            notes="Timing resistor junction at the discharge transistor.",
+        ),
+        NetDescription(
+            net_name="OUTPUT",
+            pins=[_net(timer.reference, "3", "OUT")],
+            notes="Blinking output from the timer.",
+        ),
+        NetDescription(
+            net_name="CONTROL",
+            pins=[_net(timer.reference, "5", "CTRL")],
+            notes="Control voltage stabilization node.",
+        ),
+    ]
+
+    if timing_resistor_a is not None:
+        nets[0].pins.append(_net(timing_resistor_a.reference, "1", "IN"))
+        nets[3].pins.append(_net(timing_resistor_a.reference, "2", "OUT"))
+    if timing_resistor_b is not None:
+        nets[3].pins.append(_net(timing_resistor_b.reference, "1", "IN"))
+        nets[2].pins.append(_net(timing_resistor_b.reference, "2", "OUT"))
+    if timing_cap is not None:
+        nets[2].pins.append(_net(timing_cap.reference, "1", "POS"))
+        nets[1].pins.append(_net(timing_cap.reference, "2", "NEG"))
+    if decoupling is not None:
+        nets[0].pins.append(_net(decoupling.reference, "1", "POS"))
+        nets[1].pins.append(_net(decoupling.reference, "2", "NEG"))
+    if control_cap is not None:
+        nets[5].pins.append(_net(control_cap.reference, "1", "POS"))
+        nets[1].pins.append(_net(control_cap.reference, "2", "NEG"))
+    if led_drive is not None:
+        nets[4].pins.append(_net(led_drive.reference, "1", "IN"))
+    if led is not None and led_drive is not None:
+        nets.append(
+            NetDescription(
+                net_name="LED_DRIVE",
+                pins=[_net(led_drive.reference, "2", "OUT"), _net(led.reference, "1", "A")],
+                notes="Current-limited LED drive from the timer output.",
+            )
+        )
+        nets[1].pins.append(_net(led.reference, "2", "K"))
+
+    return NetlistDescription(
+        nets=[net for net in nets if len(net.pins) >= 2 or net.net_name in {"OUTPUT", "CONTROL"}],
+        signal_flow=[
+            "5V rail powers the timer and holds RESET high.",
+            "RA and RB charge/discharge the timing capacitor through DISCHARGE_NODE.",
+            "Pins 2 and 6 sense the timing capacitor voltage at TIMING_NODE.",
+            "Pin 3 drives the LED through a current-limiting resistor.",
+        ],
+        power_symbols=["VCC", "GND", "PWR_FLAG"],
+    )
+
+
+def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
+    """Create a better-than-minimal generic fallback netlist."""
 
     nets: list[NetDescription] = []
-    ics = [item.reference for item in bom.items if item.reference.startswith("U")]
-    decouplers = [item.reference for item in bom.items if item.reference.startswith("C")]
-    leds = [item.reference for item in bom.items if item.reference.startswith("D")]
-    resistors = [item.reference for item in bom.items if item.reference.startswith("R")]
-    if ics:
-        nets.append(NetDescription(net_name="VCC", pins=[NetPin(reference=ref, pin_number="8", pin_name="VCC") for ref in ics], notes="Main supply"))
-        nets.append(NetDescription(net_name="GND", pins=[NetPin(reference=ref, pin_number="1", pin_name="GND") for ref in ics], notes="Ground return"))
-    if ics and decouplers:
+    ics = _find_items(bom.items, "U")
+    capacitors = _find_items(bom.items, "C")
+    resistors = _find_items(bom.items, "R")
+    connectors = _find_items(bom.items, "J")
+    leds = _find_items(bom.items, "D")
+
+    if connectors:
+        vcc_pins = [_net(connectors[0].reference, "1", "VCC")]
+        gnd_pins = [_net(connectors[0].reference, "2", "GND")]
+    else:
+        vcc_pins = []
+        gnd_pins = []
+
+    for ic in ics:
+        vcc_pins.append(_net(ic.reference, "1", "VCC"))
+        gnd_pins.append(_net(ic.reference, "2", "GND"))
+    nets.append(NetDescription(net_name="VCC", pins=vcc_pins, notes="Primary supply rail."))
+    nets.append(NetDescription(net_name="GND", pins=gnd_pins, notes="Primary ground return."))
+
+    for index, capacitor in enumerate(capacitors):
+        target_ic = ics[min(index, len(ics) - 1)] if ics else None
+        if target_ic:
+            nets.append(
+                NetDescription(
+                    net_name=f"DECOUPLE_{index + 1}",
+                    pins=[
+                        _net(target_ic.reference, "1", "VCC"),
+                        _net(capacitor.reference, "1", "POS"),
+                        _net(capacitor.reference, "2", "NEG"),
+                        _net(target_ic.reference, "2", "GND"),
+                    ],
+                    notes="Support capacitor across local supply pins.",
+                )
+            )
+
+    if ics and resistors:
         nets.append(
             NetDescription(
-                net_name="DECOUPLE",
-                pins=[NetPin(reference=ics[0], pin_number="8", pin_name="VCC"), NetPin(reference=decouplers[0], pin_number="1", pin_name="VCC")],
-                notes="Decoupling capacitor",
+                net_name="SIGNAL_1",
+                pins=[_net(ics[0].reference, "3", "OUT"), _net(resistors[0].reference, "1", "IN")],
+                notes="Primary signal path from the first active device.",
             )
         )
-    if ics and leds and resistors:
+    if resistors and leds:
         nets.append(
             NetDescription(
-                net_name="OUT",
-                pins=[
-                    NetPin(reference=ics[0], pin_number="3", pin_name="OUT"),
-                    NetPin(reference=resistors[0], pin_number="1", pin_name="IN"),
-                    NetPin(reference=leds[0], pin_number="1", pin_name="A"),
-                ],
-                notes="Primary output",
+                net_name="SIGNAL_2",
+                pins=[_net(resistors[0].reference, "2", "OUT"), _net(leds[0].reference, "1", "A")],
+                notes="Output indicator stage.",
             )
         )
-    return NetlistDescription(nets=nets, signal_flow=["Input power", "Timing core", "Output stage"], power_symbols=["VCC", "GND", "PWR_FLAG"])
+        nets[1].pins.append(_net(leds[0].reference, "2", "K"))
+    return NetlistDescription(
+        nets=[net for net in nets if len(net.pins) >= 2],
+        signal_flow=["Power entry", "Active device stage", "Output indication"],
+        power_symbols=["VCC", "GND", "PWR_FLAG"],
+    )
+
+
+def _fallback_netlist(bom: BillOfMaterials) -> NetlistDescription:
+    """Create a deterministic fallback netlist."""
+
+    if any(_looks_like_timer(item) for item in bom.items):
+        timer_netlist = _build_555_astable_netlist(bom)
+        if timer_netlist.nets:
+            return timer_netlist
+    return _generic_rule_netlist(bom)
+
+
+def _symbol_lib_id(item: BOMItem) -> str:
+    """Return a likely KiCad symbol library id for a BOM item."""
+
+    reference = item.reference[:1]
+    if reference == "R":
+        return "Device:R"
+    if reference == "C":
+        return "Device:C"
+    if reference == "D":
+        return "Device:LED"
+    if reference == "J":
+        return "Connector_Generic:Conn_01x02"
+    if "555" in item.value.upper():
+        return "Timer:NE555"
+    return "Device:U"
 
 
 def _render(netlist: NetlistDescription, console: Console) -> None:
@@ -98,31 +282,39 @@ def _render(netlist: NetlistDescription, console: Console) -> None:
 
 
 def _write_schematic(bom: BillOfMaterials, netlist: NetlistDescription, schematic_path: Path) -> None:
-    """Write a lightweight KiCad 7 schematic file."""
+    """Write a lightweight but more faithful KiCad 7 schematic file."""
 
     lines = [
-        "(kicad_sch (version 20230121) (generator circuitforge-ai)",
+        "(kicad_sch (version 20230121) (generator nexus-backend)",
         '  (paper "A4")',
-        '  (title_block (title "CircuitForge AI"))',
+        '  (title_block (title "Nexus Generated Circuit"))',
     ]
     for index, item in enumerate(bom.items):
-        x = 40 + (index % 4) * 40
-        y = 35 + (index // 4) * 30
+        x = 40 + (index % 4) * 45
+        y = 35 + (index // 4) * 35
         lines.extend(
             [
-                f'  (symbol (lib_id "Device:U") (at {x} {y} 0)',
+                f'  (symbol (lib_id "{_symbol_lib_id(item)}") (at {x} {y} 0)',
                 f"    (uuid {uuid.uuid4()})",
-                f'    (property "Reference" "{item.reference}" (id 0) (at {x} {y - 3} 0))',
-                f'    (property "Value" "{item.value}" (id 1) (at {x} {y + 3} 0))',
-                f'    (property "Footprint" "{item.footprint}" (id 2) (at {x} {y + 6} 0))',
+                f'    (property "Reference" "{item.reference}" (id 0) (at {x} {y - 4} 0))',
+                f'    (property "Value" "{item.value}" (id 1) (at {x} {y + 4} 0))',
+                f'    (property "Footprint" "{item.footprint}" (id 2) (at {x} {y + 7} 0))',
                 "  )",
             ]
         )
     for row, net in enumerate(netlist.nets, start=1):
         joined = ", ".join(f"{pin.reference}:{pin.pin_number}" for pin in net.pins)
-        lines.append(f'  (text "{net.net_name} -> {joined}" (at 10 {10 + row * 5} 0))')
+        lines.append(f'  (text "{net.net_name}: {joined}" (at 12 {12 + row * 5} 0))')
     lines.append(")")
     schematic_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _is_usable_netlist(netlist: NetlistDescription) -> bool:
+    """Return true when a netlist looks plausible enough to keep."""
+
+    if len(netlist.nets) < 4:
+        return False
+    return any(net.net_name == "VCC" for net in netlist.nets) and any(net.net_name == "GND" for net in netlist.nets)
 
 
 def synthesize_schematic(
@@ -141,22 +333,25 @@ def synthesize_schematic(
 
     prompt = (
         "Generate KiCad-friendly net connections for this BOM. "
-        "Include VCC, GND, signal nets, and decoupling capacitors.\n\n"
+        "Include VCC, GND, signal nets, complete timing networks, and decoupling capacitors. "
+        "If the BOM contains a 555 timer, produce a valid astable timer topology.\n\n"
         f"BOM:\n{bom.model_dump_json(indent=2)}\n\n"
         f"Datasheets:\n{json.dumps({key: value.model_dump() for key, value in datasheets.items()}, indent=2)}"
     )
 
+    netlist = _fallback_netlist(bom)
     try:
         payload = generator.generate_json(prompt, _netlist_schema())
+        candidate = NetlistDescription.model_validate(payload)
         review = verifier.generate(
-            "Review this netlist for floating inputs, power correctness, and missing decoupling capacitors.\n\n"
-            f"{json.dumps(payload, indent=2)}"
+            "Review this netlist for floating inputs, power correctness, missing decoupling capacitors, "
+            "and incorrect timer pin usage. Respond briefly.\n\n"
+            f"{candidate.model_dump_json(indent=2)}"
         )
-        if "issue" in review.lower() and "no issue" not in review.lower():
-            raise LLMProviderError(review)
-        netlist = NetlistDescription.model_validate(payload)
+        if _is_usable_netlist(candidate) and "fatal" not in review.lower():
+            netlist = candidate
     except (LLMProviderError, ValueError, TypeError):
-        netlist = _fallback_netlist(bom)
+        pass
 
     _render(netlist, console)
     output_root.mkdir(parents=True, exist_ok=True)

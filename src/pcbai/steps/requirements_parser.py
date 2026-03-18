@@ -60,8 +60,11 @@ def _fallback_requirements(natural_text: str) -> CircuitRequirements:
     if "555" in lowered:
         components = [
             ComponentRequirement(name="Timer IC", type="ic", value="NE555", quantity=1, package="DIP-8", notes="Core timer"),
-            ComponentRequirement(name="Timing resistor", type="resistor", value="10k", quantity=1, package="0603", notes="Timing network"),
-            ComponentRequirement(name="Timing capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Timing network"),
+            ComponentRequirement(name="Timing resistor A", type="resistor", value="10k", quantity=1, package="0603", notes="Charge path from VCC to discharge pin"),
+            ComponentRequirement(name="Timing resistor B", type="resistor", value="100k", quantity=1, package="0603", notes="Charge and discharge timing resistor"),
+            ComponentRequirement(name="Timing capacitor", type="capacitor", value="10uF", quantity=1, package="0805", notes="Astable timing capacitor"),
+            ComponentRequirement(name="Decoupling capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Supply decoupling at the IC"),
+            ComponentRequirement(name="Control pin capacitor", type="capacitor", value="10nF", quantity=1, package="0603", notes="Stabilizes the control voltage pin"),
             ComponentRequirement(name="Indicator LED", type="led", value="Red LED", quantity=1, package="0603", notes="Output indicator"),
             ComponentRequirement(name="Current limiting resistor", type="resistor", value="330R", quantity=1, package="0603", notes="LED current limit"),
         ]
