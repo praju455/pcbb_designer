@@ -71,7 +71,7 @@ npm install
 GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.0-flash
 GENERATOR_LLM=groq
 VERIFIER_LLM=gemini
 OLLAMA_BASE_URL=http://localhost:11434

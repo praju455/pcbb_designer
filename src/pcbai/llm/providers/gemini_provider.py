@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from rich.console import Console
@@ -21,15 +22,13 @@ class GeminiLLMProvider(BaseLLMProvider):
         if not settings.gemini_api_key:
             raise LLMProviderError("GEMINI_API_KEY is not set. Add it to .env before using Gemini.")
         try:
-            import google.generativeai as genai
+            from google import genai
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise LLMProviderError("The google-generativeai package is not installed. Run pip install -e .") from exc
+            raise LLMProviderError("The google-genai package is not installed. Run pip install -e .") from exc
 
-        genai.configure(api_key=settings.gemini_api_key)
-        self._genai = genai
+        self._client = genai.Client(api_key=settings.gemini_api_key)
         self._settings = settings
         self._console = console or Console(stderr=True)
-        self._model = genai.GenerativeModel(settings.gemini_model)
 
     def _complete(self, prompt: str) -> str:
         """Execute a completion request."""
@@ -39,7 +38,10 @@ class GeminiLLMProvider(BaseLLMProvider):
             spinner="dots",
         ):
             try:
-                response = self._model.generate_content(prompt)
+                response = self._client.models.generate_content(
+                    model=self._settings.gemini_model,
+                    contents=prompt,
+                )
             except Exception as exc:  # pragma: no cover - network dependent
                 raise LLMProviderError(f"Gemini request failed: {exc}") from exc
 
@@ -47,6 +49,22 @@ class GeminiLLMProvider(BaseLLMProvider):
         if not text.strip():
             raise LLMProviderError("Gemini returned an empty response.")
         return text.strip()
+
+    def _extract_json(self, text: str) -> dict[str, Any]:
+        """Extract a JSON object from a raw model response."""
+
+        cleaned = text.strip()
+        fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.IGNORECASE | re.DOTALL)
+        if fenced:
+            cleaned = fenced.group(1).strip()
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                return json.loads(cleaned[start : end + 1])
+            raise
 
     def generate(self, prompt: str) -> str:
         """Generate plain text."""
@@ -66,7 +84,7 @@ class GeminiLLMProvider(BaseLLMProvider):
         for _attempt in range(3):
             raw = self._complete(json_prompt)
             try:
-                return json.loads(raw)
+                return self._extract_json(raw)
             except json.JSONDecodeError as exc:
                 last_error = exc
 
@@ -81,7 +99,10 @@ class GeminiLLMProvider(BaseLLMProvider):
         """Test Gemini reachability with a small request."""
 
         try:
-            self._model.generate_content("ping")
+            self._client.models.generate_content(
+                model=self._settings.gemini_model,
+                contents="ping",
+            )
         except Exception as exc:  # pragma: no cover - network dependent
             raise LLMProviderError(f"Gemini connection test failed: {exc}") from exc
         return True

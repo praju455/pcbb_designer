@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
     generator_llm: str = Field(default="groq", alias="GENERATOR_LLM")
     verifier_llm: str = Field(default="gemini", alias="VERIFIER_LLM")
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
