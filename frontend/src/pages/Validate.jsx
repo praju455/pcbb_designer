@@ -18,8 +18,8 @@ export default function Validate() {
       <div className="glass rounded-[2rem] p-6">
         <div className="mb-4 font-serif text-2xl">DFM validation</div>
         <div className="grid gap-4 md:grid-cols-[1fr_220px_180px]">
-          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="build/design.kicad_pcb" className="rounded-[1.25rem] border border-border/80 bg-white/70 p-3.5" />
-          <select value={fab} onChange={(event) => setFab(event.target.value)} className="rounded-[1.25rem] border border-border/80 bg-white/70 p-3.5">
+          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="build/design.kicad_pcb" className="field-shell rounded-[1.25rem] p-3.5" />
+          <select value={fab} onChange={(event) => setFab(event.target.value)} className="field-shell select-field rounded-[1.25rem] p-3.5">
             <option value="jlcpcb">JLCPCB</option>
             <option value="pcbway">PCBWay</option>
             <option value="generic">Generic</option>

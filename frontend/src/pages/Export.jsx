@@ -17,7 +17,7 @@ export default function Export() {
       <div className="glass rounded-[2rem] p-6">
         <div className="mb-4 font-serif text-2xl">Fabrication export</div>
         <div className="grid gap-4 md:grid-cols-[1fr_180px]">
-          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="build/design.kicad_pcb" className="rounded-[1.25rem] border border-border/80 bg-white/70 p-3.5" />
+          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="build/design.kicad_pcb" className="field-shell rounded-[1.25rem] p-3.5" />
           <button onClick={async () => setFiles((await exportGerbers(path, { zip: true })).files || [])} className="rounded-[1.25rem] bg-text px-5 py-3 font-semibold text-background">
             Export
           </button>
