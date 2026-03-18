@@ -1,23 +1,23 @@
-"""Typer CLI entrypoint for the PCB AI agent."""
+"""CircuitForge AI Typer CLI."""
 
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Any
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.panel import Panel
 from rich.table import Table
 
+from pcbai import __version__
 from pcbai.core.config import get_settings
-from pcbai.core.logger import get_logger
-from pcbai.llm.provider import LLMProviderError, get_llm_provider
-from pcbai.models import OptimizationMode
+from pcbai.llm.provider import LLMProviderError, get_generator_llm, get_verifier_llm
+from pcbai.llm.verifier import DualLLMVerifier
+from pcbai.models import FabTarget, OptimizationMode
 from pcbai.steps.bom_generator import generate_bom
 from pcbai.steps.datasheet_fetcher import fetch_datasheets
 from pcbai.steps.dfm_validator import validate_pcb
@@ -27,204 +27,188 @@ from pcbai.steps.requirements_parser import parse_requirements
 from pcbai.steps.schematic_synthesizer import synthesize_schematic
 
 
-app = typer.Typer(help="Plain English -> Manufacturable PCB, from your terminal")
+app = typer.Typer(help="CircuitForge AI: Plain English -> Manufacturable PCB")
 
 
 def _console() -> Console:
-    """Create the shared console instance."""
+    """Return the shared CLI console."""
 
     return Console(stderr=True)
 
 
-def _set_verbose(verbose: bool) -> None:
-    """Adjust the shared logger level."""
-
-    level = 10 if verbose else 20
-    get_logger(level=level)
-
-
-def _stdin_payload() -> str:
-    """Read piped stdin if present."""
-
-    return sys.stdin.read().strip() if not sys.stdin.isatty() else ""
-
-
-def _path_from_input(value: str | None) -> Path:
-    """Resolve an input path from CLI argument or piped JSON."""
+def _stdin_path_or_json(value: str) -> str:
+    """Return an explicit path or piped stdin value."""
 
     if value:
-        return Path(value)
+        return value
+    if not sys.stdin.isatty():
+        return sys.stdin.read().strip()
+    raise typer.BadParameter("Provide --input or pipe a JSON/path value into this command.")
 
-    piped = _stdin_payload()
-    if not piped:
-        raise typer.BadParameter("No input provided. Pass --input or pipe JSON/path into the command.")
+
+def _extract_path(value: str, key: str) -> str:
+    """Extract a path from raw text or piped JSON."""
 
     try:
-        payload = json.loads(piped)
+        payload = json.loads(value)
     except json.JSONDecodeError:
-        return Path(piped)
-
-    for key in ["pcb_path", "schematic_path", "path"]:
-        if key in payload and payload[key]:
-            return Path(str(payload[key]))
-    raise typer.BadParameter("Unable to find a usable path in piped input.")
-
-
-def _summary_table(summary: dict[str, Any], title: str) -> Table:
-    """Build a compact summary table."""
-
-    table = Table(title=title)
-    table.add_column("Key")
-    table.add_column("Value")
-    for key, value in summary.items():
-        table.add_row(str(key), str(value))
-    return table
+        return value
+    return str(payload.get(key) or payload.get("path") or "")
 
 
 @app.command("generate")
 def generate_command(
     description: str = typer.Argument(..., help="Natural-language circuit description."),
     output: str = typer.Option("", "--output", help="Output directory."),
-    provider: str = typer.Option("", "--provider", help="Override LLM provider."),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+    provider: str = typer.Option("", "--provider", help="Override generator provider."),
+    no_verify: bool = typer.Option(False, "--no-verify", help="Skip dual-LLM verification."),
+    optimize: OptimizationMode = typer.Option("default", "--optimize", help="Placement mode."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose output."),
 ) -> None:
-    """Run parse, BOM generation, datasheet fetch, and schematic synthesis."""
+    """Run the end-to-end circuit generation pipeline."""
 
-    _set_verbose(verbose)
     console = _console()
     settings = get_settings()
     if provider:
-        settings.llm_provider = provider  # type: ignore[misc]
-    output_dir = Path(output) if output else settings.ensure_output_dir()
-    llm = get_llm_provider()
+        settings.generator_llm = provider
 
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    )
+    requirements = parse_requirements(description, console=console)
+    bom = generate_bom(requirements, console=console, output_dir=output or None)
+    datasheets = fetch_datasheets(bom, console=console, output_dir=output or None)
+    schematic_path = synthesize_schematic(bom, datasheets, console=console, output_dir=output or None)
+    pcb_path = route_pcb(schematic_path, optimization_mode=optimize, console=console, output_dir=output or None)
 
-    with progress:
-        task = progress.add_task("Generating PCB artifacts", total=4)
-        requirements = parse_requirements(description, provider=llm, console=console)
-        progress.advance(task)
-        bom = generate_bom(requirements, provider=llm, output_dir=output_dir, console=console)
-        progress.advance(task)
-        datasheets = fetch_datasheets(bom, provider=llm, output_dir=output_dir, console=console)
-        progress.advance(task)
-        schematic_path = synthesize_schematic(bom, datasheets, provider=llm, output_dir=output_dir, console=console)
-        progress.advance(task)
+    verification_data = None
+    if not no_verify:
+        verification_data = DualLLMVerifier(console=console).verify_existing(
+            json.loads(Path(schematic_path).with_suffix(".netlist.json").read_text(encoding="utf-8"))
+        )
+        console.print(
+            Panel.fit(
+                f"Confidence: {verification_data.confidence_score}%\n"
+                f"Rounds: {verification_data.rounds_taken}\n"
+                f"Issues fixed: {len(verification_data.issues_fixed)}",
+                title="CircuitForge Verification",
+                border_style="green" if verification_data.passed else "yellow",
+            )
+        )
 
     summary = {
-        "provider": llm.get_provider_name(),
-        "components": len(requirements.components),
-        "bom_items": len(bom.items),
-        "datasheets_cached": sum(1 for item in datasheets.values() if item.local_path),
-        "schematic_path": schematic_path,
+        "requirements": requirements.model_dump(),
+        "bom": [item.model_dump() for item in bom.items],
+        "files": [schematic_path, pcb_path],
+        "total_cost": bom.total_cost_usd,
+        "verification": verification_data.model_dump() if verification_data else {},
     }
-    console.print(_summary_table(summary, "Generation Summary"))
-    typer.echo(json.dumps({"schematic_path": schematic_path, "output_dir": str(output_dir)}, indent=2))
+    typer.echo(json.dumps(summary, indent=2))
+
+
+@app.command("verify")
+def verify_command(
+    input_file: str = typer.Option("", "--input", help="Existing netlist JSON file."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose output."),
+) -> None:
+    """Verify an existing netlist JSON file."""
+
+    console = _console()
+    raw = _stdin_path_or_json(input_file)
+    path = _extract_path(raw, "path")
+    netlist = json.loads(Path(path).read_text(encoding="utf-8"))
+    result = DualLLMVerifier(console=console).verify_existing(netlist)
+    typer.echo(result.model_dump_json(indent=2))
 
 
 @app.command("place")
 def place_command(
-    input_file: str = typer.Option("", "--input", help="KiCad schematic path."),
+    input_file: str = typer.Option("", "--input", help="Schematic file path."),
     optimize: OptimizationMode = typer.Option("default", "--optimize", help="Placement mode."),
     output: str = typer.Option("", "--output", help="Output directory."),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
 ) -> None:
-    """Place and minimally route a PCB from an existing schematic."""
+    """Place a PCB from an existing schematic."""
 
-    _set_verbose(verbose)
-    console = _console()
-    schematic_path = _path_from_input(input_file)
-    pcb_path = route_pcb(schematic_path, optimization_mode=optimize, output_dir=output or None, console=console)
+    raw = _stdin_path_or_json(input_file)
+    path = _extract_path(raw, "schematic_path")
+    pcb_path = route_pcb(path, optimization_mode=optimize, console=_console(), output_dir=output or None)
     typer.echo(json.dumps({"pcb_path": pcb_path}, indent=2))
 
 
 @app.command("validate")
 def validate_command(
-    input_file: str = typer.Option("", "--input", help="KiCad PCB path."),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+    input_file: str = typer.Option("", "--input", help="PCB file path."),
+    fab: FabTarget = typer.Option("generic", "--fab", help="Fabrication target."),
 ) -> None:
-    """Run DFM validation and exit non-zero on manufacturing errors."""
+    """Run DFM validation and exit non-zero if errors are found."""
 
-    _set_verbose(verbose)
-    console = _console()
-    pcb_path = _path_from_input(input_file)
-    report = validate_pcb(pcb_path, console=console)
+    raw = _stdin_path_or_json(input_file)
+    path = _extract_path(raw, "pcb_path")
+    report = validate_pcb(path, fab_target=fab, console=_console())
     typer.echo(report.model_dump_json(indent=2))
     raise typer.Exit(code=0 if report.passed else 1)
 
 
 @app.command("export")
 def export_command(
-    input_file: str = typer.Option("", "--input", help="KiCad PCB path."),
-    output: str = typer.Option("", "--output", help="Gerber output directory."),
-    gerber: bool = typer.Option(True, "--gerber/--no-gerber", help="Export Gerbers."),
-    zip_output: bool = typer.Option(True, "--zip/--no-zip", help="Zip the fab package."),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+    input_file: str = typer.Option("", "--input", help="PCB file path."),
+    output: str = typer.Option("", "--output", help="Export directory."),
+    gerber: bool = typer.Option(True, "--gerber/--no-gerber", help="Export Gerber files."),
+    zip_output: bool = typer.Option(True, "--zip/--no-zip", help="Zip fabrication outputs."),
 ) -> None:
-    """Export Gerber and drill artifacts."""
+    """Export fabrication files."""
 
-    _set_verbose(verbose)
-    console = _console()
-    pcb_path = _path_from_input(input_file)
-    if not gerber:
-        typer.echo(json.dumps({"exported_files": []}, indent=2))
-        raise typer.Exit(code=0)
-    output_dir = Path(output) if output else get_settings().ensure_output_dir() / "gerbers"
-    files = export_gerbers(pcb_path, output_dir, zip_output=zip_output, console=console)
-    raise typer.Exit(code=0 if files else 1)
+    raw = _stdin_path_or_json(input_file)
+    path = _extract_path(raw, "pcb_path")
+    files = export_gerbers(path, output or str(get_settings().ensure_output_dir() / "gerbers"), console=_console(), zip_output=zip_output) if gerber else []
+    typer.echo(json.dumps({"files": files}, indent=2))
 
 
 @app.command("info")
-def info_command(
-    provider: str = typer.Option("", "--provider", help="Override LLM provider."),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
-) -> None:
-    """Show active config and dependency availability."""
+def info_command() -> None:
+    """Display environment and provider status."""
 
-    _set_verbose(verbose)
     console = _console()
     settings = get_settings()
-    if provider:
-        settings.llm_provider = provider  # type: ignore[misc]
+    env_table = Table(title="CircuitForge AI Environment")
+    env_table.add_column("Item")
+    env_table.add_column("Value")
+    env_table.add_row("Version", __version__)
+    env_table.add_row("Generator LLM", f"{settings.generator_llm} ({settings.groq_model if settings.generator_llm == 'groq' else settings.ollama_model})")
+    env_table.add_row("Verifier LLM", f"{settings.verifier_llm} ({settings.gemini_model})")
+    env_table.add_row("Output Dir", str(settings.kicad_output_dir))
+    env_table.add_row("KiCad CLI", settings.kicad_cli_path)
+    console.print(env_table)
 
-    llm_provider = None
-    llm_models: list[str] = []
-    llm_error = ""
-    try:
-        llm_provider = get_llm_provider()
-        llm_models = llm_provider.list_available_models()
-    except (LLMProviderError, RuntimeError) as exc:
-        llm_error = str(exc)
-
-    table = Table(title="PCB AI Environment")
-    table.add_column("Item")
-    table.add_column("Value")
-    table.add_row("LLM Provider", settings.llm_provider)
-    table.add_row("Configured Model", settings.groq_model if settings.llm_provider == "groq" else settings.gemini_model if settings.llm_provider == "gemini" else settings.ollama_model)
-    table.add_row("Output Dir", str(settings.kicad_output_dir))
-    table.add_row("KiCad CLI", settings.kicad_cli_path)
-    table.add_row("Available Models", ", ".join(llm_models) if llm_models else llm_error or "Unavailable")
-    console.print(table)
-
-    checks = Table(title="Dependency Checks")
+    checks = Table(title="Dependency Status")
     checks.add_column("Dependency")
     checks.add_column("Status")
-    checks.add_row("kicad-cli", "[green]✅[/green]" if shutil.which(settings.kicad_cli_path) else "[red]❌[/red]")
-    checks.add_row("Ollama", "[green]✅[/green]" if shutil.which("ollama") else "[red]❌[/red]")
-    checks.add_row("Groq SDK", "[green]✅[/green]" if importlib.util.find_spec("groq") else "[red]❌[/red]")
-    checks.add_row("PyMuPDF", "[green]✅[/green]" if importlib.util.find_spec("fitz") else "[red]❌[/red]")
-    checks.add_row("SKiDL", "[green]✅[/green]" if importlib.util.find_spec("skidl") else "[red]❌[/red]")
+    try:
+        get_generator_llm().test_connection()
+        generator_status = "[green]connected[/green]"
+    except Exception as exc:
+        generator_status = f"[red]{exc}[/red]"
+    try:
+        get_verifier_llm().test_connection()
+        verifier_status = "[green]connected[/green]"
+    except Exception as exc:
+        verifier_status = f"[red]{exc}[/red]"
+    try:
+        from pcbai.llm.providers.ollama_provider import OllamaLLMProvider
+
+        OllamaLLMProvider().test_connection()
+        ollama_status = "[green]running[/green]"
+    except Exception:
+        ollama_status = "[yellow]not running[/yellow]"
+    checks.add_row("Groq", generator_status if settings.generator_llm == "groq" else "[dim]not selected[/dim]")
+    checks.add_row("Gemini", verifier_status if settings.verifier_llm == "gemini" else "[dim]not selected[/dim]")
+    checks.add_row("kicad-cli", "[green]found[/green]" if shutil.which(settings.kicad_cli_path) else "[red]missing[/red]")
+    checks.add_row("Ollama", ollama_status)
+    checks.add_row("PyMuPDF", "[green]installed[/green]" if importlib.util.find_spec("fitz") else "[red]missing[/red]")
+    checks.add_row("SKiDL", "[green]installed[/green]" if importlib.util.find_spec("skidl") else "[red]missing[/red]")
     console.print(checks)
+    typer.echo(json.dumps({"project": "CircuitForge AI", "version": __version__}, indent=2))
 
 
 def main() -> None:
-    """Launch the Typer application."""
+    """Launch the CLI application."""
 
     app()
 

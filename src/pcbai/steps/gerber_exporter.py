@@ -12,42 +12,32 @@ from rich.table import Table
 from pcbai.core.config import get_settings
 
 
-def export_gerbers(
-    pcb_file: str | Path,
-    output_dir: str | Path,
-    zip_output: bool = True,
-    console: Console | None = None,
-) -> list[str]:
-    """Export Gerber and drill files using kicad-cli."""
+def export_gerbers(pcb_file: str | Path, output_dir: str | Path, console: Console | None = None, zip_output: bool = True) -> list[str]:
+    """Export Gerber and drill files and optionally zip them."""
 
-    console = console or Console()
+    console = console or Console(stderr=True)
     settings = get_settings()
     pcb_path = Path(pcb_file)
-    gerber_dir = Path(output_dir)
-    gerber_dir.mkdir(parents=True, exist_ok=True)
+    export_dir = Path(output_dir)
+    export_dir.mkdir(parents=True, exist_ok=True)
 
     cli_path = shutil.which(settings.kicad_cli_path) or shutil.which("kicad-cli")
     if not cli_path:
         console.print("[red]kicad-cli not found in PATH.[/red]")
-        console.print("[yellow]Install KiCad 7+ and ensure 'kicad-cli' is available in your shell PATH.[/yellow]")
+        console.print("[yellow]Install KiCad 7+ and ensure kicad-cli is available.[/yellow]")
         return []
 
-    commands = [
-        [cli_path, "pcb", "export", "gerbers", "--output", str(gerber_dir), str(pcb_path)],
-        [cli_path, "pcb", "export", "drill", "--output", str(gerber_dir), str(pcb_path)],
-    ]
+    subprocess.run([cli_path, "pcb", "export", "gerbers", "--output", str(export_dir), str(pcb_path)], check=True, capture_output=True, text=True)
+    subprocess.run([cli_path, "pcb", "export", "drill", "--output", str(export_dir), str(pcb_path)], check=True, capture_output=True, text=True)
 
-    for command in commands:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+    files = sorted(str(path) for path in export_dir.iterdir() if path.is_file())
+    if zip_output and files:
+        files.append(shutil.make_archive(str(export_dir / "fab-package"), "zip", root_dir=export_dir))
 
-    exported_files = sorted(str(path) for path in gerber_dir.iterdir() if path.is_file())
-    if zip_output and exported_files:
-        archive = shutil.make_archive(str(gerber_dir / "gerbers"), "zip", root_dir=gerber_dir)
-        exported_files.append(archive)
-
-    table = Table(title="Exported Manufacturing Files")
-    table.add_column("Path")
-    for path in exported_files:
+    table = Table(title="Fabrication Files")
+    table.add_column("File")
+    for path in files:
         table.add_row(path)
     console.print(table)
-    return exported_files
+    console.print("[bold]JLCPCB upload checklist:[/bold] Verify board outline, drill map, BOM/CPL, and copper layer polarity.")
+    return files

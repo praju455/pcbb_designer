@@ -3,10 +3,10 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pcb-designer-ai-agent"
-version = "0.0.1"
-description = "Plain English to manufacturable PCB generation from the terminal"
-authors = [{ name = "PCB Designer AI Agent Contributors" }]
+name = "circuitforge-ai"
+version = "0.1.0"
+description = "CircuitForge AI: Plain English to manufacturable PCB generation from the terminal"
+authors = [{ name = "CircuitForge AI Contributors" }]
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -16,20 +16,23 @@ dependencies = [
   "pydantic>=2.0.0",
   "pydantic-settings>=2.0.0",
   "groq>=0.4.0",
+  "google-generativeai>=0.3.0",
   "python-dotenv>=1.0.0",
   "requests>=2.31.0",
   "pymupdf>=1.23.0",
   "fastapi>=0.104.0",
-  "uvicorn>=0.24.0",
+  "uvicorn[standard]>=0.24.0",
+  "websockets>=12.0",
   "skidl>=1.2.0",
+  "httpx>=0.25.0",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8.2"]
 
 [project.scripts]
+circuitforge = "pcbai.pipeline.cli:main"
 pcb = "pcbai.pipeline.cli:main"
-pcbai = "pcbai.pipeline.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
