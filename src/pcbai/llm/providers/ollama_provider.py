@@ -89,3 +89,15 @@ class OllamaLLMProvider(BaseLLMProvider):
         """Return the provider name."""
 
         return "ollama"
+
+    def list_available_models(self) -> list[str]:
+        """List locally available Ollama models."""
+
+        self._check_running()
+        try:
+            response = requests.get(f"{self._settings.ollama_base_url}/api/tags", timeout=10)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise LLMProviderError(f"Unable to list Ollama models: {exc}") from exc
+        models = response.json().get("models", [])
+        return sorted(model.get("name", "") for model in models if model.get("name"))

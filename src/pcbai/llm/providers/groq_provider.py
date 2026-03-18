@@ -86,3 +86,12 @@ class GroqLLMProvider(BaseLLMProvider):
         """Return the provider name."""
 
         return "groq"
+
+    def list_available_models(self) -> list[str]:
+        """List models visible to the configured Groq account."""
+
+        try:
+            models = self._client.models.list()
+        except Exception as exc:  # pragma: no cover - network dependent
+            raise LLMProviderError(f"Unable to list Groq models: {exc}") from exc
+        return sorted(model.id for model in getattr(models, "data", []))

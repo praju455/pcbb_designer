@@ -98,7 +98,4 @@ You will find `.kicad_mod` files in `build/` to drop into a KiCad library.
   - SKiDL schematic templates
   - EDA tool adapters
 
-## License
-Dual-licensed: 
-- Non-commercial, open-source use granted under the Custom License in LICENSE.
-- Commercial/enterprise use requires prior written authorization from the author. Contact: assalas@tutamail.com.
+

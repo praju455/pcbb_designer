@@ -27,6 +27,11 @@ class BaseLLMProvider(ABC):
     def get_provider_name(self) -> str:
         """Return a human-readable provider name."""
 
+    def list_available_models(self) -> list[str]:
+        """Return models exposed by the provider when supported."""
+
+        return []
+
 
 class UnsupportedLLMProvider(BaseLLMProvider):
     """Provider used when the configured backend is not implemented."""
@@ -57,6 +62,11 @@ class UnsupportedLLMProvider(BaseLLMProvider):
 
         return self._provider_name
 
+    def list_available_models(self) -> list[str]:
+        """Return an empty list for unsupported providers."""
+
+        return []
+
 
 def get_llm_provider() -> BaseLLMProvider:
     """Instantiate the configured LLM backend."""
@@ -70,4 +80,8 @@ def get_llm_provider() -> BaseLLMProvider:
         from pcbai.llm.providers.ollama_provider import OllamaLLMProvider
 
         return OllamaLLMProvider()
+    if settings.llm_provider == "gemini":
+        from pcbai.llm.providers.gemini_provider import GeminiLLMProvider
+
+        return GeminiLLMProvider()
     return UnsupportedLLMProvider(settings.llm_provider)

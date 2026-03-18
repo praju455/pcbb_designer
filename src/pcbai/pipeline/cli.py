@@ -1,119 +1,231 @@
+"""Typer CLI entrypoint for the PCB AI agent."""
+
 from __future__ import annotations
 
-import os
-import click
+import json
+import shutil
+import sys
+from pathlib import Path
+from typing import Any
 
+import typer
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
+
+from pcbai.core.config import get_settings
 from pcbai.core.logger import get_logger
-from pcbai.steps.requirements_parser import parse_requirements
+from pcbai.llm.provider import LLMProviderError, get_llm_provider
+from pcbai.models import OptimizationMode
 from pcbai.steps.bom_generator import generate_bom
-from pcbai.steps.datasheet_fetcher import fetch_datasheet
-from pcbai.steps.datasheet_package_extractor import extract_package_params_from_pdf
-from pcbai.steps.skidl_schematic import bom_to_schematic
+from pcbai.steps.datasheet_fetcher import fetch_datasheets
+from pcbai.steps.dfm_validator import validate_pcb
 from pcbai.steps.gerber_exporter import export_gerbers
-from pcbai.steps.footprint_generator import (
-    SmdRcParams, SoicParams, write_kicad_mod_smd_rc, write_kicad_mod_soic,
-)
-from pcbai.steps.footprint_qfn_qfp import QfnParams, QfpParams, generate_qfn, generate_qfp, KiCadModuleWriter
-from pcbai.steps.datasheet_package_extractor import extract_package_params_from_pdf
-
-logger = get_logger()
+from pcbai.steps.pcb_router import route_pcb
+from pcbai.steps.requirements_parser import parse_requirements
+from pcbai.steps.schematic_synthesizer import synthesize_schematic
 
 
-@click.group()
-def main():
-    """PCB AI Agent CLI"""
+app = typer.Typer(help="Plain English -> Manufacturable PCB, from your terminal")
 
 
-@main.command()
-@click.argument("description", nargs=-1)
-@click.option("--out", "outdir", type=click.Path(), default="build")
-def bom(description: str, outdir: str):
-    """Generate a toy BOM from a natural language description."""
-    text = " ".join(description)
-    req = parse_requirements(text)
-    parts = generate_bom(req)
-    os.makedirs(outdir, exist_ok=True)
-    path = os.path.join(outdir, "bom.txt")
-    with open(path, "w") as f:
-        for p in parts:
-            f.write(f"{p['mpn']},{p['package']}\n")
-    click.echo(f"BOM written to {path}")
+def _console() -> Console:
+    """Create the shared console instance."""
+
+    return Console(stderr=True)
 
 
-@main.command()
-@click.option("--type", "ftype", type=click.Choice(["smd_rc", "soic", "qfn", "qfp"]), required=True)
-@click.option("--name", required=True)
-@click.option("--out", "outdir", type=click.Path(), default="build")
-# Common
-@click.option("--pins", type=int)
-@click.option("--pitch", type=float)
-@click.option("--body-l", type=float)
-@click.option("--body-w", type=float)
-@click.option("--pad-l", type=float)
-@click.option("--pad-w", type=float)
-# SMD RC
-@click.option("--gap", type=float)
-# SOIC
-@click.option("--row-offset", type=float)
-# QFN specific
-@click.option("--ep-l", type=float)
-@click.option("--ep-w", type=float)
-# QFP specific
-@click.option("--gullwing-ext", type=float)
-def footprint(ftype: str, name: str, outdir: str, pins: int, pitch: float, body_l: float, body_w: float, pad_l: float, pad_w: float, gap: float, row_offset: float, ep_l: float, ep_w: float, gullwing_ext: float):
-    """Generate a KiCad footprint (.kicad_mod)."""
-    os.makedirs(outdir, exist_ok=True)
-    if ftype == "smd_rc":
-        assert all(v is not None for v in [body_l, body_w, pad_l, pad_w, gap]), "Missing SMD RC params"
-        params = SmdRcParams(name=name, body_l=body_l, body_w=body_w, pad_l=pad_l, pad_w=pad_w, gap=gap)
-        path = write_kicad_mod_smd_rc(outdir, params)
-    elif ftype == "soic":
-        assert all(v is not None for v in [pins, pitch, body_l, body_w, pad_l, pad_w, row_offset]), "Missing SOIC params"
-        params = SoicParams(name=name, pins=pins, pitch=pitch, body_l=body_l, body_w=body_w, pad_l=pad_l, pad_w=pad_w, row_offset=row_offset)
-        path = write_kicad_mod_soic(outdir, params)
-    elif ftype == "qfn":
-        assert all(v is not None for v in [pins, pitch, body_l, body_w, pad_l, pad_w]), "Missing QFN params"
-        from pcbai.steps.footprint_qfn_qfp import QfnParams, generate_qfn, KiCadModuleWriter
-        params = QfnParams(name=name, pins=pins, pitch=pitch, body_l=body_l, body_w=body_w, pad_l=pad_l, pad_w=pad_w, ep_l=ep_l, ep_w=ep_w)
-        content = generate_qfn(params)
-        path = KiCadModuleWriter(outdir).write(name, content)
-    elif ftype == "qfp":
-        assert all(v is not None for v in [pins, pitch, body_l, body_w, pad_l, pad_w]), "Missing QFP params"
-        from pcbai.steps.footprint_qfn_qfp import QfpParams, generate_qfp, KiCadModuleWriter
-        params = QfpParams(name=name, pins=pins, pitch=pitch, body_l=body_l, body_w=body_w, pad_l=pad_l, pad_w=pad_w, gullwing_ext=gullwing_ext or 0.0)
-        content = generate_qfp(params)
-        path = KiCadModuleWriter(outdir).write(name, content)
-    else:
-        raise click.ClickException("Unsupported type")
-    click.echo(f"Wrote {path}")
+def _set_verbose(verbose: bool) -> None:
+    """Adjust the shared logger level."""
+
+    level = 10 if verbose else 20
+    get_logger(level=level)
 
 
-@main.command()
-@click.argument("pdf", type=click.Path(exists=True))
-@click.option("--out", "out_json", type=click.Path(), default="build/package_guess.json")
-def extract_package(pdf: str, out_json: str):
-    """Extract package parameters from a datasheet PDF (heuristic)."""
-    os.makedirs(os.path.dirname(out_json), exist_ok=True)
-    from pcbai.steps.datasheet_package_extractor import extract_package_params_from_pdf, save_guess_json
-    guess = extract_package_params_from_pdf(pdf)
-    from pcbai.steps.datasheet_package_extractor import save_guess_json
-    save_guess_json(guess, out_json)
-    click.echo(f"Saved package guess to {out_json}")
+def _stdin_payload() -> str:
+    """Read piped stdin if present."""
+
+    return sys.stdin.read().strip() if not sys.stdin.isatty() else ""
 
 
-@main.command()
-@click.option("--out", "outdir", type=click.Path(), default="build")
-@click.argument("description", nargs=-1)
-def synthesize(description: str, outdir: str):
-    """Run a minimal end-to-end synthesis: parse → BOM → SKiDL netlist → (placeholder GERBER export)."""
-    os.makedirs(outdir, exist_ok=True)
-    req = parse_requirements(" ".join(description))
-    bom = generate_bom(req)
-    netlist = bom_to_schematic(bom)
-    netlist_path = os.path.join(outdir, "netlist.txt")
-    with open(netlist_path, "w") as f:
-        f.write(netlist)
-    click.echo(f"Netlist written to {netlist_path}")
+def _path_from_input(value: str | None) -> Path:
+    """Resolve an input path from CLI argument or piped JSON."""
+
+    if value:
+        return Path(value)
+
+    piped = _stdin_payload()
+    if not piped:
+        raise typer.BadParameter("No input provided. Pass --input or pipe JSON/path into the command.")
+
+    try:
+        payload = json.loads(piped)
+    except json.JSONDecodeError:
+        return Path(piped)
+
+    for key in ["pcb_path", "schematic_path", "path"]:
+        if key in payload and payload[key]:
+            return Path(str(payload[key]))
+    raise typer.BadParameter("Unable to find a usable path in piped input.")
+
+
+def _summary_table(summary: dict[str, Any], title: str) -> Table:
+    """Build a compact summary table."""
+
+    table = Table(title=title)
+    table.add_column("Key")
+    table.add_column("Value")
+    for key, value in summary.items():
+        table.add_row(str(key), str(value))
+    return table
+
+
+@app.command("generate")
+def generate_command(
+    description: str = typer.Argument(..., help="Natural-language circuit description."),
+    output: str = typer.Option("", "--output", help="Output directory."),
+    provider: str = typer.Option("", "--provider", help="Override LLM provider."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+) -> None:
+    """Run parse, BOM generation, datasheet fetch, and schematic synthesis."""
+
+    _set_verbose(verbose)
+    console = _console()
+    settings = get_settings()
+    if provider:
+        settings.llm_provider = provider  # type: ignore[misc]
+    output_dir = Path(output) if output else settings.ensure_output_dir()
+    llm = get_llm_provider()
+
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
+
+    with progress:
+        task = progress.add_task("Generating PCB artifacts", total=4)
+        requirements = parse_requirements(description, provider=llm, console=console)
+        progress.advance(task)
+        bom = generate_bom(requirements, provider=llm, output_dir=output_dir, console=console)
+        progress.advance(task)
+        datasheets = fetch_datasheets(bom, provider=llm, output_dir=output_dir, console=console)
+        progress.advance(task)
+        schematic_path = synthesize_schematic(bom, datasheets, provider=llm, output_dir=output_dir, console=console)
+        progress.advance(task)
+
+    summary = {
+        "provider": llm.get_provider_name(),
+        "components": len(requirements.components),
+        "bom_items": len(bom.items),
+        "datasheets_cached": sum(1 for item in datasheets.values() if item.local_path),
+        "schematic_path": schematic_path,
+    }
+    console.print(_summary_table(summary, "Generation Summary"))
+    typer.echo(json.dumps({"schematic_path": schematic_path, "output_dir": str(output_dir)}, indent=2))
+
+
+@app.command("place")
+def place_command(
+    input_file: str = typer.Option("", "--input", help="KiCad schematic path."),
+    optimize: OptimizationMode = typer.Option("default", "--optimize", help="Placement mode."),
+    output: str = typer.Option("", "--output", help="Output directory."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+) -> None:
+    """Place and minimally route a PCB from an existing schematic."""
+
+    _set_verbose(verbose)
+    console = _console()
+    schematic_path = _path_from_input(input_file)
+    pcb_path = route_pcb(schematic_path, optimization_mode=optimize, output_dir=output or None, console=console)
+    typer.echo(json.dumps({"pcb_path": pcb_path}, indent=2))
+
+
+@app.command("validate")
+def validate_command(
+    input_file: str = typer.Option("", "--input", help="KiCad PCB path."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+) -> None:
+    """Run DFM validation and exit non-zero on manufacturing errors."""
+
+    _set_verbose(verbose)
+    console = _console()
+    pcb_path = _path_from_input(input_file)
+    report = validate_pcb(pcb_path, console=console)
+    typer.echo(report.model_dump_json(indent=2))
+    raise typer.Exit(code=0 if report.passed else 1)
+
+
+@app.command("export")
+def export_command(
+    input_file: str = typer.Option("", "--input", help="KiCad PCB path."),
+    output: str = typer.Option("", "--output", help="Gerber output directory."),
+    gerber: bool = typer.Option(True, "--gerber/--no-gerber", help="Export Gerbers."),
+    zip_output: bool = typer.Option(True, "--zip/--no-zip", help="Zip the fab package."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+) -> None:
+    """Export Gerber and drill artifacts."""
+
+    _set_verbose(verbose)
+    console = _console()
+    pcb_path = _path_from_input(input_file)
+    if not gerber:
+        typer.echo(json.dumps({"exported_files": []}, indent=2))
+        raise typer.Exit(code=0)
+    output_dir = Path(output) if output else get_settings().ensure_output_dir() / "gerbers"
+    files = export_gerbers(pcb_path, output_dir, zip_output=zip_output, console=console)
+    raise typer.Exit(code=0 if files else 1)
+
+
+@app.command("info")
+def info_command(
+    provider: str = typer.Option("", "--provider", help="Override LLM provider."),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging."),
+) -> None:
+    """Show active config and dependency availability."""
+
+    _set_verbose(verbose)
+    console = _console()
+    settings = get_settings()
+    if provider:
+        settings.llm_provider = provider  # type: ignore[misc]
+
+    llm_provider = None
+    llm_models: list[str] = []
+    llm_error = ""
+    try:
+        llm_provider = get_llm_provider()
+        llm_models = llm_provider.list_available_models()
+    except (LLMProviderError, RuntimeError) as exc:
+        llm_error = str(exc)
+
+    table = Table(title="PCB AI Environment")
+    table.add_column("Item")
+    table.add_column("Value")
+    table.add_row("LLM Provider", settings.llm_provider)
+    table.add_row("Configured Model", settings.groq_model if settings.llm_provider == "groq" else settings.gemini_model if settings.llm_provider == "gemini" else settings.ollama_model)
+    table.add_row("Output Dir", str(settings.kicad_output_dir))
+    table.add_row("KiCad CLI", settings.kicad_cli_path)
+    table.add_row("Available Models", ", ".join(llm_models) if llm_models else llm_error or "Unavailable")
+    console.print(table)
+
+    checks = Table(title="Dependency Checks")
+    checks.add_column("Dependency")
+    checks.add_column("Status")
+    checks.add_row("kicad-cli", "[green]✅[/green]" if shutil.which(settings.kicad_cli_path) else "[red]❌[/red]")
+    checks.add_row("Ollama", "[green]✅[/green]" if shutil.which("ollama") else "[red]❌[/red]")
+    checks.add_row("Groq SDK", "[green]✅[/green]" if llm_provider and llm_provider.get_provider_name() == "groq" and not llm_error else "[yellow]⚠️[/yellow]")
+    checks.add_row("PyMuPDF", "[green]✅[/green]" if __import__("importlib").util.find_spec("fitz") else "[red]❌[/red]")
+    checks.add_row("SKiDL", "[green]✅[/green]" if __import__("importlib").util.find_spec("skidl") else "[red]❌[/red]")
+    console.print(checks)
+
+
+def main() -> None:
+    """Launch the Typer application."""
+
+    app()
 
 
 if __name__ == "__main__":
