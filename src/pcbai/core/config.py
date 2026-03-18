@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     ollama_model: str = Field(default="mistral", alias="OLLAMA_MODEL")
     kicad_output_dir: Path = Field(default=Path("./build"), alias="KICAD_OUTPUT_DIR")
     kicad_cli_path: str = Field(default="kicad-cli", alias="KICAD_CLI_PATH")
+    frontend_origin: str = Field(default="http://localhost:5173", alias="FRONTEND_ORIGIN")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     dfm_min_trace_width_mm: float = Field(default=0.2, alias="DFM_MIN_TRACE_WIDTH_MM")
     dfm_min_clearance_mm: float = Field(default=0.2, alias="DFM_MIN_CLEARANCE_MM")

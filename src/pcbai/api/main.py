@@ -56,9 +56,10 @@ class ConfigUpdateRequest(BaseModel):
 
 
 app = FastAPI(title="Nexus API", version=__version__)
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[settings.frontend_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -91,7 +92,7 @@ async def _run_job(job_id: str, request: GenerateRequest) -> None:
     """Run the generation pipeline for a background job."""
 
     job = _jobs[job_id]
-    output_dir = request.output_dir or str(get_settings().ensure_output_dir())
+    output_dir = request.output_dir or str(settings.ensure_output_dir())
     try:
         job.status = "running"
         job.current_step = "requirements"
@@ -130,7 +131,7 @@ async def _run_job(job_id: str, request: GenerateRequest) -> None:
             issues_found=["Dual verification enabled during requirements parsing"],
             issues_fixed=["Fallback issues auto-corrected when needed"],
             generator=get_settings().groq_model,
-            verifier=get_settings().gemini_model,
+            verifier=settings.gemini_model,
         )
         job.result = JobResult(
             requirements=requirements.model_dump(),
@@ -192,7 +193,7 @@ async def export_endpoint(request: ExportRequest) -> dict[str, Any]:
     """Export Gerbers and return the resulting file list."""
 
     options = request.options or {}
-    output_dir = options.get("output_dir") or str(get_settings().ensure_output_dir() / "gerbers")
+    output_dir = options.get("output_dir") or str(settings.ensure_output_dir() / "gerbers")
     files = export_gerbers(request.pcb_file, output_dir, zip_output=options.get("zip", True))
     zip_path = next((path for path in files if path.endswith(".zip")), "")
     return {"files": files, "zip_path": zip_path}
@@ -202,7 +203,6 @@ async def export_endpoint(request: ExportRequest) -> dict[str, Any]:
 async def get_config_endpoint() -> dict[str, Any]:
     """Return the current settings with secrets masked."""
 
-    settings = get_settings()
     data = settings.model_dump()
     data["groq_api_key"] = "***" if settings.groq_api_key else ""
     data["gemini_api_key"] = "***" if settings.gemini_api_key else ""
@@ -240,7 +240,7 @@ async def health_endpoint() -> dict[str, Any]:
     return {
         "groq_status": groq_status,
         "gemini_status": gemini_status,
-        "kicad_available": bool(shutil.which(get_settings().kicad_cli_path)),
+        "kicad_available": bool(shutil.which(settings.kicad_cli_path)),
         "ollama_running": False,
         "version": __version__,
     }
@@ -250,7 +250,7 @@ async def health_endpoint() -> dict[str, Any]:
 async def designs_endpoint() -> list[dict[str, Any]]:
     """List generated design directories and files."""
 
-    output_dir = get_settings().ensure_output_dir()
+    output_dir = settings.ensure_output_dir()
     return [
         {"name": path.name, "path": str(path), "is_dir": path.is_dir()}
         for path in sorted(output_dir.iterdir(), key=lambda current: current.name)

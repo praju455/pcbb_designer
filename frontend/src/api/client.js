@@ -1,11 +1,16 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "http://localhost:8000" });
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const wsBaseUrl =
+  import.meta.env.VITE_WS_BASE_URL ||
+  apiBaseUrl.replace("https://", "wss://").replace("http://", "ws://");
+
+const api = axios.create({ baseURL: apiBaseUrl });
 
 export const generatePCB = async (description, options = {}) => (await api.post("/api/generate", { description, ...options })).data;
 export const getJobStatus = async (jobId) => (await api.get(`/api/jobs/${jobId}`)).data;
 export const connectToLogs = (jobId, onMessage) => {
-  const socket = new WebSocket(`ws://localhost:8000/ws/logs/${jobId}`);
+  const socket = new WebSocket(`${wsBaseUrl}/ws/logs/${jobId}`);
   socket.onmessage = (event) => onMessage(JSON.parse(event.data));
   return socket;
 };
