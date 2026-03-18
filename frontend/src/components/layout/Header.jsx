@@ -1,4 +1,3 @@
-import { MoveRight } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const links = [
@@ -22,6 +21,7 @@ export default function Header({ health, healthQuery }) {
       : connectionState === "connecting"
         ? "Connecting"
         : "Backend disconnected";
+  const showConnectionBanner = connectionState !== "connected";
 
   return (
     <header className="mb-6 rounded-[2rem] border border-border/70 bg-card/80 px-5 py-5 shadow-paper backdrop-blur md:px-8">
@@ -50,13 +50,16 @@ export default function Header({ health, healthQuery }) {
                 {label}
               </NavLink>
             ))}
+            <span className={`ml-1 h-2.5 w-2.5 rounded-full ${statusClass}`} />
           </nav>
-          <div className="flex items-center gap-3 rounded-full border border-border/80 bg-white/70 px-4 py-2 text-sm text-muted">
-            <span className={`h-2.5 w-2.5 rounded-full ${statusClass}`} />
-            <span>{statusLabel}</span>
-            <MoveRight size={14} className="text-primary" />
-            <span className="text-text">{health?.version ? "Auto-sync active" : "Waiting for API"}</span>
-          </div>
+          {showConnectionBanner ? (
+            <div className="rounded-[1.25rem] border border-border/80 bg-white/80 px-5 py-3 text-sm text-muted">
+              <div className="flex items-center gap-3">
+                <span className={`h-2.5 w-2.5 rounded-full ${statusClass}`} />
+                <span>{statusLabel}</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </header>
