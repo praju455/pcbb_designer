@@ -9,7 +9,7 @@ export default function Validate() {
   const mutation = useDFM();
 
   return (
-    <div className="space-y-6">
+    <div className="fade-rise space-y-6">
       <PageIntro
         eyebrow="Validate"
         title="Fabrication checks without the clutter."

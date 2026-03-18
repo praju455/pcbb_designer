@@ -14,7 +14,7 @@ export default function Dashboard() {
   const backendLive = Boolean(health.version);
 
   return (
-    <div className="space-y-6">
+    <div className="fade-rise space-y-6">
       <PageIntro
         eyebrow="Control room"
         title="A cleaner cockpit for real circuit work."

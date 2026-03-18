@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import BOMTable from "../components/generator/BOMTable";
 import GenerateForm from "../components/generator/GenerateForm";
+import RequirementsSummary from "../components/generator/RequirementsSummary";
 import SchematicPreview from "../components/generator/SchematicPreview";
 import PageIntro from "../components/layout/PageIntro";
 import TerminalOutput from "../components/terminal/TerminalOutput";
@@ -20,7 +21,7 @@ export default function Generate() {
   }, [generateMutation.data]);
 
   return (
-    <div className="space-y-6">
+    <div className="fade-rise space-y-6">
       <PageIntro
         eyebrow="Generate"
         title="Describe the circuit in plain language, then let Nexus shape the run."
@@ -45,9 +46,12 @@ export default function Generate() {
                 Step timing will appear here once the backend accepts a job.
               </div>
             )}
-            {(jobQuery.data?.steps_completed || []).map((step) => (
-              <div key={step} className="rounded-[1.5rem] border border-success/20 bg-success/10 px-4 py-3 text-sm text-text">
-                {step}
+            {(jobQuery.data?.steps_completed || []).map((step, index) => (
+              <div key={step} className="flex items-center gap-3 rounded-[1.5rem] border border-success/20 bg-success/10 px-4 py-3 text-sm text-text">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-success/15 text-xs uppercase tracking-[0.18em] text-success">
+                  {index + 1}
+                </span>
+                <span>{step}</span>
               </div>
             ))}
           </div>
@@ -56,10 +60,7 @@ export default function Generate() {
       </div>
       <TerminalOutput jobId={jobId} />
       <div className="grid gap-6 xl:grid-cols-3">
-        <div className="glass rounded-[2rem] p-6">
-          <div className="mb-4 font-serif text-2xl">Requirements</div>
-          <pre className="overflow-x-auto rounded-[1.5rem] bg-white/55 p-4 text-xs text-muted">{JSON.stringify(jobQuery.data?.result?.requirements || {}, null, 2)}</pre>
-        </div>
+        <RequirementsSummary requirements={jobQuery.data?.result?.requirements || {}} />
         <BOMTable items={jobQuery.data?.result?.bom || []} />
         <SchematicPreview files={jobQuery.data?.result?.files || []} />
       </div>

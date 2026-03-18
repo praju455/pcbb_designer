@@ -3,15 +3,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "#f3ede2",
-        card: "#fbf7f0",
-        border: "#d7c8b4",
-        primary: "#8b5e3c",
-        success: "#456b53",
-        warning: "#a9752a",
-        error: "#9b4338",
-        text: "#1f1a17",
-        muted: "#6f6459"
+        background: "#edf3f7",
+        card: "#f8fbfd",
+        border: "#c8d7e3",
+        primary: "#146c94",
+        success: "#1f8f6b",
+        warning: "#d48a23",
+        error: "#c44f4f",
+        text: "#10212b",
+        muted: "#60717e"
       },
       fontFamily: {
         sans: ["Inter", "sans-serif"],
@@ -19,8 +19,8 @@ export default {
         mono: ["JetBrains Mono", "monospace"]
       },
       boxShadow: {
-        glow: "0 25px 80px rgba(74, 54, 35, 0.14)",
-        paper: "0 20px 60px rgba(56, 39, 27, 0.08)"
+        glow: "0 25px 80px rgba(20, 108, 148, 0.15)",
+        paper: "0 20px 60px rgba(20, 47, 61, 0.08)"
       },
       animation: {
         floaty: "floaty 7s ease-in-out infinite",

@@ -9,7 +9,7 @@ export default function Settings() {
   const current = useMemo(() => ({ ...config, ...form }), [config, form]);
 
   return (
-    <div className="space-y-6">
+    <div className="fade-rise space-y-6">
       <PageIntro
         eyebrow="Settings"
         title="Tune models, paths, and local fallback without losing the visual rhythm."

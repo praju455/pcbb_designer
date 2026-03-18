@@ -5,8 +5,7 @@ const links = [
   { to: "/", label: "Dashboard" },
   { to: "/generate", label: "Generate" },
   { to: "/validate", label: "Validate" },
-  { to: "/export", label: "Export" },
-  { to: "/settings", label: "Settings" }
+  { to: "/export", label: "Export" }
 ];
 
 export default function Header({ health, healthQuery }) {
@@ -33,7 +32,7 @@ export default function Header({ health, healthQuery }) {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.45em] text-primary">Nexus</div>
-            <h1 className="font-serif text-2xl leading-tight md:text-[2rem]">Circuit design, reviewed with taste.</h1>
+            <h1 className="font-serif text-2xl leading-tight md:text-[2rem]">Circuit design with a calmer, sharper workflow.</h1>
           </div>
         </div>
         <div className="flex flex-col gap-4 lg:items-end">

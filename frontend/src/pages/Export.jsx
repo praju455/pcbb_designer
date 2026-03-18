@@ -8,7 +8,7 @@ export default function Export() {
   const [files, setFiles] = useState([]);
 
   return (
-    <div className="space-y-6">
+    <div className="fade-rise space-y-6">
       <PageIntro
         eyebrow="Export"
         title="Package fabrication files with the same quiet workflow."

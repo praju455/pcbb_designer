@@ -6,7 +6,6 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Generate = lazy(() => import("./pages/Generate"));
 const Validate = lazy(() => import("./pages/Validate"));
 const Export = lazy(() => import("./pages/Export"));
-const Settings = lazy(() => import("./pages/Settings"));
 
 export default function App() {
   return (
@@ -17,7 +16,6 @@ export default function App() {
           <Route path="/generate" element={<Generate />} />
           <Route path="/validate" element={<Validate />} />
           <Route path="/export" element={<Export />} />
-          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>
     </Layout>
