@@ -9,20 +9,58 @@ import VerificationPanel from "../components/verification/VerificationPanel";
 import { usePipeline } from "../hooks/usePipeline";
 import { useVerification } from "../hooks/useVerification";
 
+const GENERATE_CACHE_KEY = "nexus-generate-cache";
+const GENERATE_CACHE_TTL_MS = 20 * 60 * 1000;
+
 export default function Generate() {
   const [jobId, setJobId] = useState("");
+  const [cachedSnapshot, setCachedSnapshot] = useState(null);
   const { generateMutation, jobQuery } = usePipeline(jobId);
-  const verification = useVerification(jobQuery.data);
+  const activeJob = jobQuery.data || cachedSnapshot;
+  const verification = useVerification(activeJob);
   const startError =
     generateMutation.error?.response?.data?.detail ||
     generateMutation.error?.message ||
     "";
 
   useEffect(() => {
+    const raw = window.localStorage.getItem(GENERATE_CACHE_KEY);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (Date.now() - parsed.saved_at > GENERATE_CACHE_TTL_MS) {
+        window.localStorage.removeItem(GENERATE_CACHE_KEY);
+        return;
+      }
+      setCachedSnapshot(parsed.payload || null);
+      if (parsed.payload?.job_id) {
+        setJobId((current) => current || parsed.payload.job_id);
+      }
+    } catch {
+      window.localStorage.removeItem(GENERATE_CACHE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
     if (generateMutation.data?.job_id) {
       setJobId(generateMutation.data.job_id);
     }
   }, [generateMutation.data]);
+
+  useEffect(() => {
+    if (!jobQuery.data) return;
+
+    const payload = { ...jobQuery.data, job_id: jobId };
+    setCachedSnapshot(payload);
+    window.localStorage.setItem(
+      GENERATE_CACHE_KEY,
+      JSON.stringify({
+        saved_at: Date.now(),
+        payload,
+      }),
+    );
+  }, [jobId, jobQuery.data]);
 
   return (
     <div className="fade-rise space-y-6">
@@ -33,9 +71,9 @@ export default function Generate() {
         aside={
           <div className="space-y-4">
             <div className="text-xs uppercase tracking-[0.28em] text-muted">Current run</div>
-            <div className="text-3xl font-serif text-text">{jobQuery.data?.status || "idle"}</div>
+            <div className="text-3xl font-serif text-text">{activeJob?.status || "idle"}</div>
             <div className="text-sm leading-7 text-muted">
-              {jobQuery.data?.current_step || "Waiting for a design brief."}
+              {activeJob?.current_step || "Waiting for a design brief."}
             </div>
           </div>
         }
@@ -53,12 +91,12 @@ export default function Generate() {
         <div className="glass rounded-[2rem] p-6">
           <div className="mb-4 font-serif text-2xl">Run progress</div>
           <div className="space-y-3">
-            {jobQuery.data?.steps_completed?.length ? null : (
+            {activeJob?.steps_completed?.length ? null : (
               <div className="rounded-[1.5rem] border border-dashed border-border/80 bg-white/50 px-4 py-6 text-sm text-muted">
                 Step timing will appear here once the backend accepts a job.
               </div>
             )}
-            {(jobQuery.data?.steps_completed || []).map((step, index) => (
+            {(activeJob?.steps_completed || []).map((step, index) => (
               <div key={step} className="flex items-center gap-3 rounded-[1.5rem] border border-success/20 bg-success/10 px-4 py-3 text-sm text-text">
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-success/15 text-xs uppercase tracking-[0.18em] text-success">
                   {index + 1}
@@ -68,13 +106,13 @@ export default function Generate() {
             ))}
           </div>
         </div>
-        <VerificationPanel verificationData={verification} isLive={jobQuery.data?.status === "running"} />
+        <VerificationPanel verificationData={verification} isLive={activeJob?.status === "running"} />
       </div>
       <TerminalOutput jobId={jobId} />
       <div className="grid gap-6 xl:grid-cols-3">
-        <RequirementsSummary requirements={jobQuery.data?.result?.requirements || {}} />
-        <BOMTable items={jobQuery.data?.result?.bom || []} />
-        <SchematicPreview files={jobQuery.data?.result?.files || []} />
+        <RequirementsSummary requirements={activeJob?.result?.requirements || {}} />
+        <BOMTable items={activeJob?.result?.bom || []} />
+        <SchematicPreview files={activeJob?.result?.files || []} />
       </div>
     </div>
   );
