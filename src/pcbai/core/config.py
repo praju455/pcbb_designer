@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+import shutil
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,6 +44,22 @@ class Settings(BaseSettings):
 
         self.kicad_output_dir.mkdir(parents=True, exist_ok=True)
         return self.kicad_output_dir
+
+    def resolve_kicad_cli_path(self) -> str:
+        """Return the best available KiCad CLI path."""
+
+        direct = shutil.which(self.kicad_cli_path)
+        if direct:
+            return direct
+        common_candidates = [
+            Path(r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe"),
+            Path(r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe"),
+            Path(r"C:\Program Files\KiCad\7.0\bin\kicad-cli.exe"),
+        ]
+        for candidate in common_candidates:
+            if candidate.exists():
+                return str(candidate)
+        return self.kicad_cli_path
 
     @property
     def frontend_origins(self) -> list[str]:

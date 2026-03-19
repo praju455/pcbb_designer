@@ -68,6 +68,36 @@ def _fallback_requirements(natural_text: str) -> CircuitRequirements:
             ComponentRequirement(name="Indicator LED", type="led", value="Red LED", quantity=1, package="0603", notes="Output indicator"),
             ComponentRequirement(name="Current limiting resistor", type="resistor", value="330R", quantity=1, package="0603", notes="LED current limit"),
         ]
+    elif "op-amp" in lowered or "op amp" in lowered or "preamp" in lowered or "amplifier" in lowered:
+        components = [
+            ComponentRequirement(name="Amplifier IC", type="ic", value="LM358", quantity=1, package="SOIC-8", notes="Dual op-amp core"),
+            ComponentRequirement(name="Feedback resistor", type="resistor", value="100k", quantity=1, package="0603", notes="Sets closed-loop gain"),
+            ComponentRequirement(name="Input resistor", type="resistor", value="10k", quantity=1, package="0603", notes="Input network"),
+            ComponentRequirement(name="Bias resistor", type="resistor", value="100k", quantity=1, package="0603", notes="Bias reference"),
+            ComponentRequirement(name="Input capacitor", type="capacitor", value="1uF", quantity=1, package="0805", notes="AC coupling"),
+            ComponentRequirement(name="Decoupling capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Supply decoupling"),
+            ComponentRequirement(name="Input connector", type="connector", value="Audio In", quantity=1, package="THT", notes="Signal input"),
+            ComponentRequirement(name="Output connector", type="connector", value="Audio Out", quantity=1, package="THT", notes="Signal output"),
+        ]
+    elif "sensor" in lowered or "i2c" in lowered or "breakout" in lowered:
+        components = [
+            ComponentRequirement(name="Sensor IC", type="ic", value="MCP9808", quantity=1, package="SOIC-8", notes="Example digital sensor"),
+            ComponentRequirement(name="Header connector", type="connector", value="I2C Header", quantity=1, package="THT", notes="Power and bus breakout"),
+            ComponentRequirement(name="Decoupling capacitor", type="capacitor", value="100nF", quantity=1, package="0603", notes="Local supply decoupling"),
+            ComponentRequirement(name="Pull-up resistor SDA", type="resistor", value="4.7k", quantity=1, package="0603", notes="I2C bus pull-up"),
+            ComponentRequirement(name="Pull-up resistor SCL", type="resistor", value="4.7k", quantity=1, package="0603", notes="I2C bus pull-up"),
+            ComponentRequirement(name="Status LED", type="led", value="Amber LED", quantity=1, package="0603", notes="Power indicator"),
+            ComponentRequirement(name="LED resistor", type="resistor", value="1k", quantity=1, package="0603", notes="Indicator current limit"),
+        ]
+    elif "transistor" in lowered or "relay" in lowered or "switch" in lowered or "driver" in lowered:
+        components = [
+            ComponentRequirement(name="Input connector", type="connector", value="Control Header", quantity=1, package="THT", notes="Power and control input"),
+            ComponentRequirement(name="Switch transistor", type="transistor", value="MMBT3904", quantity=1, package="SOT-23", notes="Low-side switch"),
+            ComponentRequirement(name="Base resistor", type="resistor", value="1k", quantity=1, package="0603", notes="Base or gate drive resistor"),
+            ComponentRequirement(name="Pull-down resistor", type="resistor", value="100k", quantity=1, package="0603", notes="Keeps switch off at startup"),
+            ComponentRequirement(name="Load LED", type="led", value="Green LED", quantity=1, package="0603", notes="Visible switched load"),
+            ComponentRequirement(name="Load resistor", type="resistor", value="330R", quantity=1, package="0603", notes="Current limit for load"),
+        ]
     if not components:
         components = [
             ComponentRequirement(

@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+import subprocess
 
 import typer
 from rich.console import Console
@@ -54,6 +55,15 @@ def _extract_path(value: str, key: str) -> str:
     except json.JSONDecodeError:
         return value
     return str(payload.get(key) or payload.get("path") or "")
+
+
+def _kicad_install_hint() -> str:
+    """Return a short KiCad installation hint."""
+
+    return (
+        "If KiCad CLI is missing, run `powershell -ExecutionPolicy Bypass -File scripts\\setup-kicad-cli.ps1` "
+        "or install KiCad 8/9 and restart the shell."
+    )
 
 
 @app.command("generate")
@@ -174,7 +184,7 @@ def info_command() -> None:
     env_table.add_row("Generator LLM", f"{settings.generator_llm} ({settings.groq_model if settings.generator_llm == 'groq' else settings.ollama_model})")
     env_table.add_row("Verifier LLM", f"{settings.verifier_llm} ({settings.gemini_model})")
     env_table.add_row("Output Dir", str(settings.kicad_output_dir))
-    env_table.add_row("KiCad CLI", settings.kicad_cli_path)
+    env_table.add_row("KiCad CLI", settings.resolve_kicad_cli_path())
     console.print(env_table)
 
     checks = Table(title="Dependency Status")
@@ -199,12 +209,54 @@ def info_command() -> None:
         ollama_status = "[yellow]not running[/yellow]"
     checks.add_row("Groq", generator_status if settings.generator_llm == "groq" else "[dim]not selected[/dim]")
     checks.add_row("Gemini", verifier_status if settings.verifier_llm == "gemini" else "[dim]not selected[/dim]")
-    checks.add_row("kicad-cli", "[green]found[/green]" if shutil.which(settings.kicad_cli_path) else "[red]missing[/red]")
+    resolved_kicad = settings.resolve_kicad_cli_path()
+    checks.add_row("kicad-cli", "[green]found[/green]" if (shutil.which(resolved_kicad) or Path(resolved_kicad).exists()) else "[red]missing[/red]")
     checks.add_row("Ollama", ollama_status)
     checks.add_row("PyMuPDF", "[green]installed[/green]" if importlib.util.find_spec("fitz") else "[red]missing[/red]")
     checks.add_row("SKiDL", "[green]installed[/green]" if importlib.util.find_spec("skidl") else "[red]missing[/red]")
     console.print(checks)
+    if not (shutil.which(resolved_kicad) or Path(resolved_kicad).exists()):
+        console.print(f"[yellow]{_kicad_install_hint()}[/yellow]")
     typer.echo(json.dumps({"project": "Nexus", "version": __version__}, indent=2))
+
+
+@app.command("setup-kicad")
+def setup_kicad_command() -> None:
+    """Attempt to help users install or detect KiCad CLI on Windows."""
+
+    console = _console()
+    settings = get_settings()
+    resolved = settings.resolve_kicad_cli_path()
+    if shutil.which(resolved) or Path(resolved).exists():
+        console.print(f"[green]KiCad CLI already available at[/green] {resolved}")
+        typer.echo(json.dumps({"kicad_cli": resolved, "status": "found"}, indent=2))
+        return
+
+    script_path = Path("scripts") / "setup-kicad-cli.ps1"
+    if not script_path.exists():
+        raise typer.Exit(code=1)
+
+    console.print("[yellow]KiCad CLI not found. Launching the setup helper...[/yellow]")
+    subprocess.run(
+        [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script_path),
+        ],
+        check=False,
+    )
+    refreshed = settings.resolve_kicad_cli_path()
+    typer.echo(
+        json.dumps(
+            {
+                "kicad_cli": refreshed,
+                "status": "found" if (shutil.which(refreshed) or Path(refreshed).exists()) else "missing",
+            },
+            indent=2,
+        )
+    )
 
 
 def main() -> None:

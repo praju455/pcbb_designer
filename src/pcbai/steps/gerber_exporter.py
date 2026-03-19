@@ -21,8 +21,12 @@ def export_gerbers(pcb_file: str | Path, output_dir: str | Path, console: Consol
     export_dir = Path(output_dir)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    cli_path = shutil.which(settings.kicad_cli_path) or shutil.which("kicad-cli")
+    cli_path = shutil.which(settings.resolve_kicad_cli_path()) or shutil.which("kicad-cli") or settings.resolve_kicad_cli_path()
     if not cli_path:
+        console.print("[red]kicad-cli not found in PATH.[/red]")
+        console.print("[yellow]Install KiCad 7+ and ensure kicad-cli is available.[/yellow]")
+        return []
+    if not Path(cli_path).exists() and shutil.which(cli_path) is None:
         console.print("[red]kicad-cli not found in PATH.[/red]")
         console.print("[yellow]Install KiCad 7+ and ensure kicad-cli is available.[/yellow]")
         return []
