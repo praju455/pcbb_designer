@@ -165,8 +165,9 @@ def validate_pcb(pcb_file: str | Path, fab_target: FabTarget = "generic", consol
     fabrication_success_probability = int(score)
     try:
         summary = verifier.generate(
-            "Analyze this DFM report, call out the root causes, suggest concrete fixes, "
-            "and estimate fabrication success probability.\n\n"
+            "Analyze this DFM report and respond in 3 short paragraphs maximum. "
+            "Focus on the main fabrication blocker, the next best fix, and a brief confidence estimate. "
+            "Do not include JSON, markdown lists, or code fences.\n\n"
             f"{DFMReport(passed=False, score=score, fab_target=fab_target, checks=checks).model_dump_json(indent=2)}"
         )
     except LLMProviderError:

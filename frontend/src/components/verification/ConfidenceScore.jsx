@@ -1,4 +1,4 @@
-export default function ConfidenceScore({ score = 0 }) {
+export default function ConfidenceScore({ score = 0, label = "Confidence" }) {
   const safeScore = Math.max(0, Math.min(100, score || 0));
   const stroke = safeScore > 75 ? "#1f8f6b" : safeScore > 50 ? "#d48a23" : "#c44f4f";
   const radius = 54;
@@ -28,7 +28,7 @@ export default function ConfidenceScore({ score = 0 }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div className="font-serif text-3xl text-text">{`${safeScore}%`}</div>
-          <div className="text-[11px] uppercase tracking-[0.28em] text-muted">Confidence</div>
+          <div className="px-4 text-center text-[11px] uppercase tracking-[0.22em] text-muted">{label}</div>
         </div>
       </div>
     </div>

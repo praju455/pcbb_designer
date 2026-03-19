@@ -1,20 +1,35 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-*.pyd
-*.egg-info/
-.venv/
-.env
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-# Build
+# Local environments
+.env
+.env.local
+.venv/
+venv/
+.deps/
+
+# Build and generated outputs
 build/
 dist/
+*.egg-info/
 
-# IDE
+# Frontend outputs
+frontend/node_modules/
+frontend/dist/
+frontend/.vercel/
+
+# Backend outputs
+backend/build/
+backend/dist/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
-
-# Tests
-.pytest_cache/
-.cache/
+.deps/
