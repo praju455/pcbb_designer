@@ -72,6 +72,32 @@ def _find_first(items: list[BOMItem], prefix: str) -> BOMItem | None:
     return None
 
 
+def _part_key(item: BOMItem) -> str:
+    """Return the likely lookup key for datasheet metadata."""
+
+    return item.part_number or item.value
+
+
+def _pin_name_map(item: BOMItem, datasheets: dict[str, DatasheetInfo]) -> dict[str, str]:
+    """Return normalized pin names for a BOM item from cached datasheets."""
+
+    candidates = [_part_key(item), item.value, item.reference]
+    for candidate in candidates:
+        if candidate in datasheets:
+            return {pin: name.upper() for pin, name in datasheets[candidate].key_specs.pinout.items()}
+    return {}
+
+
+def _find_pin_number(item: BOMItem, datasheets: dict[str, DatasheetInfo], keywords: tuple[str, ...], default: str) -> str:
+    """Find a pin number by searching datasheet pin names."""
+
+    pin_names = _pin_name_map(item, datasheets)
+    for pin_number, pin_name in pin_names.items():
+        if any(keyword in pin_name for keyword in keywords):
+            return pin_number
+    return default
+
+
 def _looks_like_timer(item: BOMItem) -> bool:
     """Return true when the BOM item resembles a 555 timer."""
 
@@ -179,7 +205,7 @@ def _build_555_astable_netlist(bom: BillOfMaterials) -> NetlistDescription:
     )
 
 
-def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
+def _generic_rule_netlist(bom: BillOfMaterials, datasheets: dict[str, DatasheetInfo]) -> NetlistDescription:
     """Create a better-than-minimal generic fallback netlist."""
 
     nets: list[NetDescription] = []
@@ -188,6 +214,7 @@ def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
     resistors = _find_items(bom.items, "R")
     connectors = _find_items(bom.items, "J")
     leds = _find_items(bom.items, "D")
+    transistors = _find_items(bom.items, "Q")
 
     if connectors:
         vcc_pins = [_net(connectors[0].reference, "1", "VCC")]
@@ -197,35 +224,65 @@ def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
         gnd_pins = []
 
     for ic in ics:
-        vcc_pins.append(_net(ic.reference, "1", "VCC"))
-        gnd_pins.append(_net(ic.reference, "2", "GND"))
+        vcc_pin = _find_pin_number(ic, datasheets, ("VCC", "VDD", "VIN", "V+"), "1")
+        gnd_pin = _find_pin_number(ic, datasheets, ("GND", "VSS", "V-", "AGND", "DGND"), "2")
+        vcc_pins.append(_net(ic.reference, vcc_pin, "VCC"))
+        gnd_pins.append(_net(ic.reference, gnd_pin, "GND"))
+    for transistor in transistors:
+        source_pin = _find_pin_number(transistor, datasheets, ("SOURCE", "EMITTER", "S", "E"), "2")
+        gnd_pins.append(_net(transistor.reference, source_pin, "GND"))
     nets.append(NetDescription(net_name="VCC", pins=vcc_pins, notes="Primary supply rail."))
     nets.append(NetDescription(net_name="GND", pins=gnd_pins, notes="Primary ground return."))
 
     for index, capacitor in enumerate(capacitors):
         target_ic = ics[min(index, len(ics) - 1)] if ics else None
         if target_ic:
-            nets.append(
-                NetDescription(
-                    net_name=f"DECOUPLE_{index + 1}",
-                    pins=[
-                        _net(target_ic.reference, "1", "VCC"),
-                        _net(capacitor.reference, "1", "POS"),
-                        _net(capacitor.reference, "2", "NEG"),
-                        _net(target_ic.reference, "2", "GND"),
-                    ],
-                    notes="Support capacitor across local supply pins.",
-                )
-            )
+            vcc_pin = _find_pin_number(target_ic, datasheets, ("VCC", "VDD", "VIN", "V+"), "1")
+            gnd_pin = _find_pin_number(target_ic, datasheets, ("GND", "VSS", "V-", "AGND", "DGND"), "2")
+            nets[0].pins.extend([_net(target_ic.reference, vcc_pin, "VCC"), _net(capacitor.reference, "1", "POS")])
+            nets[1].pins.extend([_net(target_ic.reference, gnd_pin, "GND"), _net(capacitor.reference, "2", "NEG")])
 
     if ics and resistors:
+        signal_pin = _find_pin_number(ics[0], datasheets, ("OUT", "IO", "SIG", "PWM"), "3")
         nets.append(
             NetDescription(
                 net_name="SIGNAL_1",
-                pins=[_net(ics[0].reference, "3", "OUT"), _net(resistors[0].reference, "1", "IN")],
+                pins=[_net(ics[0].reference, signal_pin, "OUT"), _net(resistors[0].reference, "1", "IN")],
                 notes="Primary signal path from the first active device.",
             )
         )
+    if transistors and resistors:
+        control_resistor = resistors[-1]
+        drive_source = ics[0] if ics else None
+        if drive_source is not None:
+            drive_pin = _find_pin_number(drive_source, datasheets, ("OUT", "IO", "SIG", "PWM"), "3")
+            base_pin = _find_pin_number(transistors[0], datasheets, ("BASE", "GATE", "B", "G"), "1")
+            nets.append(
+                NetDescription(
+                    net_name="CONTROL_1",
+                    pins=[
+                        _net(drive_source.reference, drive_pin, "OUT"),
+                        _net(control_resistor.reference, "1", "IN"),
+                        _net(control_resistor.reference, "2", "OUT"),
+                        _net(transistors[0].reference, base_pin, "CTRL"),
+                    ],
+                    notes="Drive path into the first switching transistor.",
+                )
+            )
+        elif connectors:
+            base_pin = _find_pin_number(transistors[0], datasheets, ("BASE", "GATE", "B", "G"), "1")
+            nets.append(
+                NetDescription(
+                    net_name="CONTROL_1",
+                    pins=[
+                        _net(connectors[0].reference, "1", "SIG"),
+                        _net(control_resistor.reference, "1", "IN"),
+                        _net(control_resistor.reference, "2", "OUT"),
+                        _net(transistors[0].reference, base_pin, "CTRL"),
+                    ],
+                    notes="External control path into the first switching transistor.",
+                )
+            )
     if resistors and leds:
         nets.append(
             NetDescription(
@@ -235,6 +292,19 @@ def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
             )
         )
         nets[1].pins.append(_net(leds[0].reference, "2", "K"))
+    elif leds:
+        nets[0].pins.append(_net(leds[0].reference, "1", "A"))
+        nets[1].pins.append(_net(leds[0].reference, "2", "K"))
+    if transistors and leds:
+        load_pin = _find_pin_number(transistors[0], datasheets, ("COLLECTOR", "DRAIN", "C", "D"), "3")
+        nets.append(
+            NetDescription(
+                net_name="SWITCH_NODE",
+                pins=[_net(transistors[0].reference, load_pin, "LOAD"), _net(leds[0].reference, "2", "K")],
+                notes="Switched low-side node for the indicator load.",
+            )
+        )
+        nets[1].pins = [pin for pin in nets[1].pins if not (pin.reference == leds[0].reference and pin.pin_number == "2")]
     return NetlistDescription(
         nets=[net for net in nets if len(net.pins) >= 2],
         signal_flow=["Power entry", "Active device stage", "Output indication"],
@@ -242,14 +312,14 @@ def _generic_rule_netlist(bom: BillOfMaterials) -> NetlistDescription:
     )
 
 
-def _fallback_netlist(bom: BillOfMaterials) -> NetlistDescription:
+def _fallback_netlist(bom: BillOfMaterials, datasheets: dict[str, DatasheetInfo]) -> NetlistDescription:
     """Create a deterministic fallback netlist."""
 
     if any(_looks_like_timer(item) for item in bom.items):
         timer_netlist = _build_555_astable_netlist(bom)
         if timer_netlist.nets:
             return timer_netlist
-    return _generic_rule_netlist(bom)
+    return _generic_rule_netlist(bom, datasheets)
 
 
 def _symbol_lib_id(item: BOMItem) -> str:
@@ -339,7 +409,7 @@ def synthesize_schematic(
         f"Datasheets:\n{json.dumps({key: value.model_dump() for key, value in datasheets.items()}, indent=2)}"
     )
 
-    netlist = _fallback_netlist(bom)
+    netlist = _fallback_netlist(bom, datasheets)
     try:
         payload = generator.generate_json(prompt, _netlist_schema())
         candidate = NetlistDescription.model_validate(payload)

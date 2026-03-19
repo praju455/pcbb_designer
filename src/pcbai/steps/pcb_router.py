@@ -99,6 +99,16 @@ def _pad_specs(item_footprint: str, reference: str) -> list[PadSpec]:
     """Return pad definitions for common package families."""
 
     footprint = item_footprint.upper()
+    if "AXIAL" in footprint:
+        return [
+            ("1", "thru_hole oval", -3.81, 0.0, 1.8, 1.8),
+            ("2", "thru_hole oval", 3.81, 0.0, 1.8, 1.8),
+        ]
+    if "DISC" in footprint or "P5.00MM" in footprint or "RADIAL_D" in footprint:
+        return [
+            ("1", "thru_hole oval", -2.50, 0.0, 1.8, 1.8),
+            ("2", "thru_hole oval", 2.50, 0.0, 1.8, 1.8),
+        ]
     if "DIP-8" in footprint:
         return [
             ("1", "thru_hole rect", -3.81, -3.81, 1.6, 1.6),
@@ -121,11 +131,21 @@ def _pad_specs(item_footprint: str, reference: str) -> list[PadSpec]:
             ("7", "smd roundrect", 2.7, -0.635, 1.5, 0.6),
             ("8", "smd roundrect", 2.7, -1.905, 1.5, 0.6),
         ]
-    if reference.startswith("J"):
+    if "SOT-23" in footprint:
         return [
-            ("1", "thru_hole oval", 0.0, -1.27, 1.7, 1.7),
-            ("2", "thru_hole oval", 0.0, 1.27, 1.7, 1.7),
+            ("1", "smd roundrect", -1.10, 0.95, 0.9, 0.7),
+            ("2", "smd roundrect", -1.10, -0.95, 0.9, 0.7),
+            ("3", "smd roundrect", 1.10, 0.0, 0.9, 0.7),
         ]
+    if reference.startswith("J"):
+        count = 2
+        if "1X03" in footprint:
+            count = 3
+        elif "1X04" in footprint:
+            count = 4
+        pitch = 2.54
+        origin = -((count - 1) * pitch) / 2
+        return [(str(index + 1), "thru_hole oval", 0.0, origin + (index * pitch), 1.7, 1.7) for index in range(count)]
     return [
         ("1", "smd roundrect", -0.95, 0.0, 0.9, 1.1),
         ("2", "smd roundrect", 0.95, 0.0, 0.9, 1.1),
@@ -147,11 +167,31 @@ def _net_lookup(netlist: NetlistDescription) -> tuple[dict[tuple[str, str], str]
 def _outline_size(placement: PlacementRecord) -> tuple[float, float]:
     """Return a simple footprint outline size for courtyard generation."""
 
+    footprint = placement.footprint.upper()
+    if "DIP-8" in footprint:
+        return 10.0, 12.0
+    if "SOIC-8" in footprint:
+        return 8.0, 7.0
+    if "SOT-23" in footprint:
+        return 4.5, 4.5
+    if "AXIAL" in footprint:
+        return 10.0, 4.0
+    if "DISC" in footprint or "P5.00MM" in footprint or "RADIAL_D" in footprint:
+        return 7.0, 4.5
     if placement.reference.startswith("U"):
         return 10.0, 12.0
     if placement.reference.startswith("J"):
         return 5.0, 7.0
     return 5.0, 3.6
+
+
+def _footprint_attr(item_footprint: str, reference: str) -> str:
+    """Return the KiCad footprint attribute line."""
+
+    pads = _pad_specs(item_footprint, reference)
+    if any(pad_kind.startswith("thru_hole") for _, pad_kind, *_rest in pads):
+        return '    (attr through_hole)'
+    return '    (attr smd)'
 
 
 def _pad_line(pad: PadSpec, net_name: str | None, net_to_index: dict[str, int]) -> str:
@@ -207,10 +247,10 @@ def _route_segments(
         points = [anchors[(pin.reference, pin.pin_number)] for pin in net.pins if (pin.reference, pin.pin_number) in anchors]
         if len(points) < 2:
             continue
-        hub_x = sum(point[0] for point in points) / len(points)
-        hub_y = sum(point[1] for point in points) / len(points)
-        width = _segment_width(net.net_name)
         net_index = net_to_index.get(net.net_name, 1)
+        hub_x = (sum(point[0] for point in points) / len(points)) + ((net_index % 3) - 1) * 1.6
+        hub_y = (sum(point[1] for point in points) / len(points)) + (((net_index - 1) % 4) - 1.5) * 1.8
+        width = _segment_width(net.net_name)
         for point_x, point_y in points:
             if abs(point_x - hub_x) > 0.05:
                 segments.append(
@@ -254,7 +294,7 @@ def _board_text(bom: BillOfMaterials, netlist: NetlistDescription, result: Place
                 f'    (at {placement.x_mm:.2f} {placement.y_mm:.2f} {placement.rotation_deg:.2f})',
                 f'    (property "Reference" "{item.reference}" (at 0 {-outline_h / 2 - 1.4:.2f} 0) (layer "F.SilkS"))',
                 f'    (property "Value" "{item.value}" (at 0 {outline_h / 2 + 1.4:.2f} 0) (layer "F.Fab"))',
-                '    (attr smd)',
+                _footprint_attr(item.footprint, item.reference),
                 f'    (fp_line (start {-outline_w / 2:.2f} {-outline_h / 2:.2f}) (end {outline_w / 2:.2f} {-outline_h / 2:.2f}) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))',
                 f'    (fp_line (start {outline_w / 2:.2f} {-outline_h / 2:.2f}) (end {outline_w / 2:.2f} {outline_h / 2:.2f}) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))',
                 f'    (fp_line (start {outline_w / 2:.2f} {outline_h / 2:.2f}) (end {-outline_w / 2:.2f} {outline_h / 2:.2f}) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))',
